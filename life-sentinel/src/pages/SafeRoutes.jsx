@@ -1,75 +1,61 @@
-import React, { useMemo } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useSafety } from '../contexts/SafetyContext';
-import { MOCK_ROUTES } from '../data/mockData';
-import { haversineDistance } from '../services/placesService';
-import { Route, AlertTriangle, CheckCircle, MapPin, Info, Navigation, ExternalLink } from 'lucide-react';
+import { getCommunityIncidents } from '../services/emergencyService';
+import { Route, AlertTriangle, MapPin, Info, Navigation, ExternalLink, RefreshCw } from 'lucide-react';
 
 export default function SafeRoutes() {
   const { t } = useLanguage();
-  const { location, locationPermission } = useSafety();
+  const { location, locationPermission, fetchLocation } = useSafety();
 
-  // Calculate distance from user's current location to each route's midpoint
-  const routesWithDistance = useMemo(() => {
-    const tr = (key, fallback) => { const r = t(key); return r !== key ? r : fallback; };
-    const translated = MOCK_ROUTES.map(r => ({
-      ...r,
-      reason: tr(`mock.route.${r.id}.reason`, r.reason),
-    }));
-    if (!location) {
-      return translated.map(r => ({ ...r, distance: null, midpoint: r.coordinates?.[0] || [0, 0] }));
-    }
+  const [destination, setDestination] = useState('');
+  const [incidents, setIncidents] = useState([]);
+  const [incidentsLoading, setIncidentsLoading] = useState(false);
+  const [incidentsError, setIncidentsError] = useState(null);
 
-    return translated.map(route => {
-      // Use the first coordinate of the route as reference point
-      const coords = route.coordinates?.[0] || [33.6844, 73.0479];
-      const dist = haversineDistance(location.lat, location.lng, coords[0], coords[1]);
-      return { ...route, distance: dist, midpoint: coords };
-    }).sort((a, b) => (a.distance ?? Infinity) - (b.distance ?? Infinity));
+  // Load community-reported incidents for display alongside navigation
+  useEffect(() => {
+    let cancelled = false;
+    setIncidentsLoading(true);
+    setIncidentsError(null);
+
+    getCommunityIncidents(location, t)
+      .then(data => {
+        if (!cancelled) setIncidents(data);
+      })
+      .catch(err => {
+        if (!cancelled) setIncidentsError(err.message || t('common.error', 'Error'));
+      })
+      .finally(() => {
+        if (!cancelled) setIncidentsLoading(false);
+      });
+
+    return () => { cancelled = true; };
   }, [location, t]);
 
-  // Filter routes: show nearby first (5km), expand to 20km if few results
-  const nearbyThreshold = 5; // km
-  const expandedThreshold = 20; // km
+  const hasLocation = location && locationPermission === 'granted';
 
-  const nearbyRoutes = useMemo(() => {
-    const withinRange = routesWithDistance.filter(r =>
-      r.distance !== null && r.distance <= nearbyThreshold
-    );
-    if (withinRange.length >= 2) return withinRange;
-    // Expand search radius
-    return routesWithDistance.filter(r =>
-      r.distance !== null && r.distance <= expandedThreshold
-    );
-  }, [routesWithDistance]);
+  const handleNavigate = useCallback(() => {
+    const trimmed = destination.trim();
+    if (!trimmed) return;
 
-  const searchExpanded = nearbyRoutes.every(r => r.distance > nearbyThreshold) && nearbyRoutes.length > 0;
-
-  const hazardousRoutes = nearbyRoutes.filter(r => r.status === 'hazardous');
-  const safeRoutes = nearbyRoutes.filter(r => r.status === 'safe');
-
-  /**
-   * Open external map navigation for a route.
-   * Uses the route's last coordinate as the destination, or the first coordinate
-   * if only one coordinate is available. The user's current location is used as
-   * the origin when available; otherwise only the destination is passed.
-   */
-  const navigateToRoute = (route) => {
-    if (!route?.coordinates || route.coordinates.length === 0) return;
-
-    // Safest available destination: prefer the last coordinate as the route endpoint
-    const destinationCoords = route.coordinates[route.coordinates.length - 1];
-    const destination = `${destinationCoords[0]},${destinationCoords[1]}`;
-
+    const encodedDestination = encodeURIComponent(trimmed);
     let url;
-    if (location && locationPermission === 'granted') {
+
+    if (hasLocation) {
       const origin = `${location.lat},${location.lng}`;
-      url = `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destination)}`;
+      url = `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(origin)}&destination=${encodedDestination}`;
     } else {
-      url = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destination)}`;
+      url = `https://www.google.com/maps/dir/?api=1&destination=${encodedDestination}`;
     }
 
     window.open(url, '_blank', 'noopener,noreferrer');
+  }, [destination, hasLocation, location]);
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter') {
+      handleNavigate();
+    }
   };
 
   return (
@@ -81,143 +67,146 @@ export default function SafeRoutes() {
           {t('routes.title')}
         </h1>
         <p className="text-sm mt-1" style={{ color: 'var(--color-text-secondary)' }}>
-          {location && locationPermission === 'granted'
-            ? `${t('routes.locationBased')} (${location.lat.toFixed(4)}, ${location.lng.toFixed(4)})`
-            : t('routes.subtitle')}
+          {t('routes.subtitle')}
         </p>
       </div>
 
-      {/* Location permission notice */}
-      {locationPermission === 'denied' && (
-        <div className="card p-4 flex items-start gap-3 bg-warning-50 dark:bg-warning-900/10 border border-warning-200 dark:border-warning-800">
-          <MapPin className="w-5 h-5 text-warning-600 flex-shrink-0 mt-0.5" />
-          <div>
-            <p className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>{t('routes.locationNeeded')}</p>
-            <p className="text-xs mt-1" style={{ color: 'var(--color-text-secondary)' }}>
-              {t('routes.locationNeededDesc')}
+      {/* Current Location */}
+      <div className="card space-y-3">
+        <h2 className="text-base font-bold flex items-center gap-2" style={{ color: 'var(--color-text)' }}>
+          <MapPin className="w-5 h-5 text-sentinel-500" />
+          {t('routes.currentLocation', 'Current Location')}
+        </h2>
+
+        {hasLocation ? (
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+              {location.address && location.address !== `${location.lat.toFixed(4)}, ${location.lng.toFixed(4)}`
+                ? location.address
+                : `${location.lat.toFixed(5)}, ${location.lng.toFixed(5)}`}
+              {location.accuracy ? ` (±${Math.round(location.accuracy)}m)` : ''}
+            </p>
+            <p className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+              {t('routes.locationActive', 'Location active')}
             </p>
           </div>
-        </div>
-      )}
+        ) : (
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+              {locationPermission === 'denied'
+                ? t('routes.locationNeededDesc')
+                : t('routes.locationUnavailable', 'Location unavailable')}
+            </p>
+            <button
+              onClick={fetchLocation}
+              className="inline-flex items-center gap-1.5 text-sm font-semibold text-sentinel-600 hover:underline"
+            >
+              <RefreshCw className="w-4 h-4" />
+              {t('common.retry', 'Retry')}
+            </button>
+          </div>
+        )}
+      </div>
 
-      {/* Limitation Notice */}
+      {/* Navigation disclaimer */}
       <div className="card p-4 flex items-start gap-3" style={{ background: 'var(--color-bg-secondary)' }}>
         <Info className="w-5 h-5 text-warning-500 flex-shrink-0 mt-0.5" />
         <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
-          {t('routes.limitationNotice')}
+          {t('routes.googleMapsDisclaimer', 'Navigation is provided by Google Maps. Life Sentinel does not currently provide real-time traffic information.')}
         </p>
       </div>
 
-      {/* Expanded search notice */}
-      {searchExpanded && (
-        <div className="card p-3 flex items-center gap-2" style={{ background: 'var(--color-bg-secondary)' }}>
-          <Navigation className="w-4 h-4 text-sentinel-500" />
-          <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
-            {t('routes.expandedNotice').replace('{radius}', expandedThreshold)}
-          </p>
-        </div>
-      )}
+      {/* Destination + Navigate */}
+      <div className="card space-y-4">
+        <h2 className="text-lg font-bold flex items-center gap-2" style={{ color: 'var(--color-text)' }}>
+          <Navigation className="w-5 h-5 text-sentinel-500" />
+          {t('routes.destination', 'Destination')}
+        </h2>
 
-      {/* No nearby routes message */}
-      {nearbyRoutes.length === 0 && location && locationPermission === 'granted' && (
-        <div className="card text-center p-8">
-          <Route className="w-12 h-12 mx-auto mb-3" style={{ color: 'var(--color-text-secondary)', opacity: 0.3 }} />
-          <p className="font-semibold" style={{ color: 'var(--color-text)' }}>{t('routes.noRoutesNearby')}</p>
-          <p className="text-sm mt-1" style={{ color: 'var(--color-text-secondary)' }}>
-            {t('routes.noRoutesDesc').replace('{radius}', expandedThreshold)}
-          </p>
+        <div className="flex flex-col sm:flex-row gap-2">
+          <input
+            type="text"
+            value={destination}
+            onChange={(e) => setDestination(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder={t('routes.destinationPlaceholder', 'Where do you want to go?')}
+            className="flex-1 px-3 py-2.5 rounded-lg text-sm border focus:outline-none focus:ring-2 focus:ring-sentinel-500"
+            style={{
+              background: 'var(--color-bg)',
+              borderColor: 'var(--color-border)',
+              color: 'var(--color-text)',
+            }}
+          />
+          <button
+            onClick={handleNavigate}
+            disabled={!destination.trim()}
+            className="btn-primary inline-flex items-center justify-center gap-2 disabled:opacity-60"
+          >
+            <ExternalLink className="w-4 h-4" />
+            {t('routes.navigate', 'Navigate')}
+          </button>
         </div>
-      )}
 
-      {/* Hazardous Routes */}
-      {hazardousRoutes.length > 0 && (
-        <div>
-          <h2 className="text-lg font-bold mb-3 flex items-center gap-2 text-emergency-600">
-            <AlertTriangle className="w-5 h-5" />
-            {t('routes.hazardous')}
-          </h2>
-          <p className="text-xs mb-2" style={{ color: 'var(--color-text-secondary)' }}>
-            {t('routes.communityHazardsLabel', 'Community-reported hazards (not from live traffic data)')}
-          </p>
-          <div className="space-y-3">
-            {hazardousRoutes.map(route => (
-              <div key={route.id} className="card border-l-4 border-emergency-500 bg-emergency-50 dark:bg-emergency-900/10">
-                <div className="flex items-start gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-emergency-100 dark:bg-emergency-900/30 flex items-center justify-center flex-shrink-0">
-                    <AlertTriangle className="w-5 h-5 text-emergency-600" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-bold text-base" style={{ color: 'var(--color-text)' }}>{route.name}</h3>
-                    <p className="text-sm mt-1" style={{ color: 'var(--color-text-secondary)' }}>{route.reason}</p>
-                    <div className="flex items-center gap-2 mt-2 flex-wrap">
-                      <span className="badge badge-critical">{t('routes.hazardous')}</span>
-                      {route.distance != null && (
-                        <span className="badge" style={{ background: 'var(--color-bg-secondary)', color: 'var(--color-text-secondary)' }}>
-                          <MapPin className="w-3 h-3 mr-1" />{route.distance < 1 ? `${Math.round(route.distance * 1000)} m` : `${route.distance.toFixed(1)} km`} {t('common.away')}
-                        </span>
-                      )}
-                      <button
-                        onClick={() => navigateToRoute(route)}
-                        className="inline-flex items-center gap-1 text-xs font-semibold text-sentinel-600 hover:underline"
-                        title={t('routes.navigateTo', 'Navigate to {name}').replace('{name}', route.name)}
-                      >
-                        <ExternalLink className="w-3 h-3" />
-                        {t('routes.navigate', 'Navigate')}
-                      </button>
+        {!hasLocation && (
+          <div className="p-3 rounded-lg flex items-start gap-2 bg-warning-50 dark:bg-warning-900/10 border border-warning-200 dark:border-warning-800">
+            <AlertTriangle className="w-4 h-4 text-warning-600 flex-shrink-0 mt-0.5" />
+            <p className="text-sm" style={{ color: 'var(--color-text)' }}>
+              {t('routes.locationNeeded', 'Location access needed')}
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* Community Hazards */}
+      <div className="space-y-3">
+        <h2 className="text-lg font-bold flex items-center gap-2 text-emergency-600">
+          <AlertTriangle className="w-5 h-5" />
+          {t('routes.communityReports', 'Community Reports')}
+        </h2>
+
+        {incidentsLoading ? (
+          <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>{t('common.loading', 'Loading...')}</p>
+        ) : incidentsError ? (
+          <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>{incidentsError}</p>
+        ) : incidents.length === 0 ? (
+          <div className="card text-center p-6">
+            <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+              {t('routes.noCommunityReports', 'No community-reported hazards available at this time.')}
+            </p>
+          </div>
+        ) : (
+          <>
+            <p className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+              {t('routes.communityHazardsLabel', 'Community-reported hazards (not from live traffic data)')}
+            </p>
+            <div className="space-y-3">
+              {incidents.map(incident => (
+                <div key={incident.id} className="card border-l-4 border-emergency-500 bg-emergency-50 dark:bg-emergency-900/10">
+                  <div className="flex items-start gap-3">
+                    <div className="w-10 h-10 rounded-lg bg-emergency-100 dark:bg-emergency-900/30 flex items-center justify-center flex-shrink-0">
+                      <AlertTriangle className="w-5 h-5 text-emergency-600" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-bold text-base" style={{ color: 'var(--color-text)' }}>{incident.title}</h3>
+                      <p className="text-sm mt-1" style={{ color: 'var(--color-text-secondary)' }}>{incident.description}</p>
+                      <div className="flex items-center gap-2 mt-2 flex-wrap">
+                        <span className="badge badge-critical">{t('routes.hazardous', 'Hazard')}</span>
+                        {incident.status && (
+                          <span className="badge" style={{ background: 'var(--color-bg-secondary)', color: 'var(--color-text-secondary)' }}>
+                            {incident.status}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+              ))}
+            </div>
+          </>
+        )}
+      </div>
 
-      {/* Safe Routes */}
-      {safeRoutes.length > 0 && (
-        <div>
-          <h2 className="text-lg font-bold mb-3 flex items-center gap-2 text-safe-600">
-            <CheckCircle className="w-5 h-5" />
-            {t('routes.safe')}
-          </h2>
-          <p className="text-xs mb-2" style={{ color: 'var(--color-text-secondary)' }}>
-            {t('routes.communitySafeLabel', 'Community-reported routes with no known hazards')}
-          </p>
-          <div className="space-y-3">
-            {safeRoutes.map(route => (
-              <div key={route.id} className="card border-l-4 border-safe-500 bg-safe-50 dark:bg-safe-900/10">
-                <div className="flex items-start gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-safe-100 dark:bg-safe-900/30 flex items-center justify-center flex-shrink-0">
-                    <CheckCircle className="w-5 h-5 text-safe-600" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-bold text-base" style={{ color: 'var(--color-text)' }}>{route.name}</h3>
-                    <p className="text-sm mt-1" style={{ color: 'var(--color-text-secondary)' }}>{route.reason}</p>
-                    <div className="flex items-center gap-2 mt-2 flex-wrap">
-                      <span className="badge badge-safe">{t('routes.safe')}</span>
-                      {route.distance != null && (
-                        <span className="badge" style={{ background: 'var(--color-bg-secondary)', color: 'var(--color-text-secondary)' }}>
-                          <MapPin className="w-3 h-3 mr-1" />{route.distance < 1 ? `${Math.round(route.distance * 1000)} m` : `${route.distance.toFixed(1)} km`} {t('common.away')}
-                        </span>
-                      )}
-                      <button
-                        onClick={() => navigateToRoute(route)}
-                        className="inline-flex items-center gap-1 text-xs font-semibold text-sentinel-600 hover:underline"
-                        title={t('routes.navigateTo', 'Navigate to {name}').replace('{name}', route.name)}
-                      >
-                        <ExternalLink className="w-3 h-3" />
-                        {t('routes.navigate', 'Navigate')}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* General Advice */}
+      {/* Safety Tips */}
       <div className="card">
         <h3 className="font-bold mb-3" style={{ color: 'var(--color-text)' }}>{t('routes.generalTips')}</h3>
         <ul className="space-y-2 text-sm" style={{ color: 'var(--color-text-secondary)' }}>
@@ -241,8 +230,7 @@ export default function SafeRoutes() {
       </div>
 
       <p className="text-xs text-center" style={{ color: 'var(--color-text-secondary)' }}>
-        <span className="badge badge-info mr-1">{t('common.demoData')}</span>
-        {t('routes.footer')}
+        {t('routes.googleMapsDisclaimer', 'Navigation is provided by Google Maps. Life Sentinel does not currently provide real-time traffic information.')}
       </p>
     </div>
   );
