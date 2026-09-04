@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useSafety } from '../contexts/SafetyContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -19,6 +19,10 @@ export default function EmergencyReport() {
   const [image, setImage] = useState(null);
   const [imagePreview, setImagePreview] = useState(null);
   const [isRecording, setIsRecording] = useState(false);
+  const [audioBlob, setAudioBlob] = useState(null);
+  const [audioURL, setAudioURL] = useState(null);
+  const [recordingTime, setRecordingTime] = useState(0);
+  const [recorderError, setRecorderError] = useState(null);
   const [isClassifying, setIsClassifying] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -30,6 +34,21 @@ export default function EmergencyReport() {
   const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
 
   const fileInputRef = useRef(null);
+  const mediaRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
+  const streamRef = useRef(null);
+  const timerRef = useRef(null);
+  const audioURLRef = useRef(null);
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+      }
+      if (audioURLRef.current) URL.revokeObjectURL(audioURLRef.current);
+    };
+  }, []);
 
   const handleClassify = async () => {
     if (!description.trim()) return;
@@ -60,14 +79,124 @@ export default function EmergencyReport() {
     setAnalyzingImage(false);
   };
 
-  const handleVoiceRecording = () => {
-    if (isRecording) {
-      setIsRecording(false);
-      setDescription(prev => prev + ' ' + t('report.voiceSimText'));
+  const formatRecordingTime = (seconds) => {
+    const m = Math.floor(seconds / 60).toString().padStart(2, '0');
+    const s = (seconds % 60).toString().padStart(2, '0');
+    return `${m}:${s}`;
+  };
+
+  const getSupportedMimeType = () => {
+    const types = [
+      'audio/webm;codecs=opus',
+      'audio/webm',
+      'audio/mp4',
+      'audio/ogg;codecs=opus',
+      'audio/ogg',
+      'audio/wav',
+      'audio/mpeg'
+    ];
+    for (const type of types) {
+      if (MediaRecorder.isTypeSupported(type)) return type;
+    }
+    return '';
+  };
+
+  const stopMicrophoneTracks = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
+    }
+  };
+
+  const startRecording = async () => {
+    setRecorderError(null);
+
+    if (!window.MediaRecorder || !navigator.mediaDevices?.getUserMedia) {
+      setRecorderError(t('report.recorderNotSupported'));
       return;
     }
-    setIsRecording(true);
-    setTimeout(() => setIsRecording(false), 5000);
+
+    if (audioURLRef.current) {
+      URL.revokeObjectURL(audioURLRef.current);
+      audioURLRef.current = null;
+    }
+    setAudioBlob(null);
+    setAudioURL(null);
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+
+      const mimeType = getSupportedMimeType();
+      const mediaRecorder = new MediaRecorder(stream, mimeType ? { mimeType } : {});
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      mediaRecorder.onstop = () => {
+        const blobType = mimeType || 'audio/webm';
+        const blob = new Blob(audioChunksRef.current, { type: blobType });
+        const url = URL.createObjectURL(blob);
+        audioURLRef.current = url;
+        setAudioBlob(blob);
+        setAudioURL(url);
+        stopMicrophoneTracks();
+      };
+
+      mediaRecorder.onerror = () => {
+        setRecorderError(t('report.recorderError'));
+        stopMicrophoneTracks();
+        setIsRecording(false);
+        if (timerRef.current) {
+          clearInterval(timerRef.current);
+          timerRef.current = null;
+        }
+      };
+
+      mediaRecorder.start(200);
+      setIsRecording(true);
+      setRecordingTime(0);
+      timerRef.current = setInterval(() => setRecordingTime(prev => prev + 1), 1000);
+    } catch (err) {
+      stopMicrophoneTracks();
+      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        setRecorderError(t('report.micPermissionDenied'));
+      } else {
+        setRecorderError(err.message || t('report.recorderError'));
+      }
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      try {
+        mediaRecorderRef.current.stop();
+      } catch (err) {
+        console.error('Error stopping recorder:', err);
+      }
+    }
+    setIsRecording(false);
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+  };
+
+  const handleVoiceRecording = () => {
+    if (isRecording) {
+      stopRecording();
+    } else {
+      startRecording();
+    }
+  };
+
+  const handleRecordAgain = () => {
+    startRecording();
   };
 
   // Auto-submit: sends immediately when user clicks "Report Emergency"
@@ -117,6 +246,13 @@ export default function EmergencyReport() {
     setImageAnalysis(null);
     setSubmitted(false);
     setSubmitResult(null);
+    if (audioURLRef.current) URL.revokeObjectURL(audioURLRef.current);
+    audioURLRef.current = null;
+    setAudioBlob(null);
+    setAudioURL(null);
+    setRecordingTime(0);
+    setRecorderError(null);
+    stopMicrophoneTracks();
   };
 
   // ===== SUCCESS STATE =====
@@ -200,19 +336,44 @@ export default function EmergencyReport() {
           onChange={(e) => setDescription(e.target.value)}
         />
 
-        <div className="flex flex-wrap gap-2 mt-3">
-          <button
-            onClick={handleVoiceRecording}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-              isRecording
-                ? 'bg-emergency-100 text-emergency-700 dark:bg-emergency-900/30 dark:text-emergency-400'
-                : 'hover:bg-gray-100 dark:hover:bg-gray-700'
-            }`}
-            style={!isRecording ? { color: 'var(--color-text-secondary)' } : {}}
-          >
-            {isRecording ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
-            {isRecording ? t('report.voiceStop') : t('report.voiceStart')}
-          </button>
+        <div className="flex flex-wrap items-center gap-2 mt-3">
+          {!audioURL && (
+            <button
+              onClick={handleVoiceRecording}
+              disabled={isSubmitting}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                isRecording
+                  ? 'bg-emergency-100 text-emergency-700 dark:bg-emergency-900/30 dark:text-emergency-400'
+                  : 'hover:bg-gray-100 dark:hover:bg-gray-700'
+              }`}
+              style={!isRecording ? { color: 'var(--color-text-secondary)' } : {}}
+            >
+              {isRecording ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+              {isRecording ? t('report.voiceStop') : t('report.voiceStart')}
+            </button>
+          )}
+
+          {isRecording && (
+            <span className="flex items-center gap-2 text-sm font-medium" style={{ color: 'var(--color-text)' }}>
+              <span className="w-2 h-2 rounded-full bg-emergency-500 animate-pulse" />
+              {formatRecordingTime(recordingTime)}
+            </span>
+          )}
+
+          {audioURL && !isRecording && (
+            <>
+              <audio controls src={audioURL} className="h-8 max-w-[180px] sm:max-w-[240px]" />
+              <button
+                onClick={handleRecordAgain}
+                disabled={isSubmitting}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                style={{ color: 'var(--color-text-secondary)' }}
+              >
+                <RotateCcw className="w-4 h-4" />
+                {t('report.recordAgain')}
+              </button>
+            </>
+          )}
 
           <button
             onClick={() => fileInputRef.current?.click()}
@@ -233,6 +394,13 @@ export default function EmergencyReport() {
             {isClassifying ? t('common.loading') : t('common.analyze')}
           </button>
         </div>
+
+        {recorderError && (
+          <div className="mt-2 text-sm flex items-center gap-2" style={{ color: 'var(--color-text-secondary)' }}>
+            <span className="text-emergency-500 font-medium">{t('common.error')}:</span>
+            {recorderError}
+          </div>
+        )}
       </div>
 
       {/* Image Preview & Analysis */}
