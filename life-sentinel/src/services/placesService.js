@@ -2,7 +2,15 @@
 // No API key required. Returns hospitals, police, fire stations, shelters, ambulance services.
 // Calculates real distances using the Haversine formula and sorts nearest → farthest.
 
-const OVERPASS_ENDPOINT = 'https://overpass-api.de/api/interpreter';
+// Overpass API endpoints (OpenStreetMap). Multiple mirrors are listed so the
+// app can fall back if one mirror is down or rate-limited.
+const OVERPASS_ENDPOINTS = [
+  'https://overpass-api.de/api/interpreter',
+  'https://overpass.kumi.systems/api/interpreter',
+  'https://overpass.openstreetmap.fr/api/interpreter',
+];
+
+const OVERPASS_PROXY_PATH = '/api/overpass';
 
 const DEFAULT_RADIUS = 5000; // 5 km
 const EXPANDED_RADIUS = 15000; // 15 km
@@ -156,6 +164,72 @@ function deduplicateResources(resources) {
 }
 
 /**
+ * Determine whether the app is running on a local development server.
+ * On localhost we can call Overpass directly; in production we use the
+ * same-origin Vercel proxy to avoid CORS errors.
+ */
+function isLocalDev() {
+  if (typeof window === 'undefined') return false;
+  const host = window.location.hostname;
+  return host === 'localhost' || host === '127.0.0.1';
+}
+
+/**
+ * Query an Overpass API mirror.
+ * In production, requests go through /api/overpass (same-origin proxy).
+ * In local development, requests are sent directly to Overpass.
+ * Tries each configured endpoint until one succeeds.
+ */
+async function queryOverpass(overpassQl) {
+  const errors = [];
+  const local = isLocalDev();
+
+  for (const endpoint of OVERPASS_ENDPOINTS) {
+    try {
+      let response;
+
+      if (local) {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 15000);
+
+        response = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: `data=${encodeURIComponent(overpassQl)}`,
+          signal: controller.signal,
+        });
+
+        clearTimeout(timeoutId);
+      } else {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 25000);
+
+        response = await fetch(OVERPASS_PROXY_PATH, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: overpassQl, endpoint }),
+          signal: controller.signal,
+        });
+
+        clearTimeout(timeoutId);
+      }
+
+      if (!response.ok) {
+        const text = await response.text().catch(() => '');
+        throw new Error(`HTTP ${response.status} ${text}`);
+      }
+
+      return await response.json();
+    } catch (err) {
+      const message = err.name === 'AbortError' ? 'timeout' : err.message;
+      errors.push(`${endpoint}: ${message}`);
+    }
+  }
+
+  throw new Error(`All Overpass endpoints failed: ${errors.join('; ')}`);
+}
+
+/**
  * Fetch real nearby emergency resources from OpenStreetMap via Overpass API.
  *
  * @param {number} lat - User's current latitude
@@ -196,17 +270,7 @@ export async function reverseGeocode(lat, lng) {
 export async function fetchNearbyResources(lat, lng, typeFilter = null) {
   const query = buildOverpassQuery(lat, lng, DEFAULT_RADIUS);
 
-  const response = await fetch(OVERPASS_ENDPOINT, {
-    method: 'POST',
-    body: `data=${encodeURIComponent(query)}`,
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-  });
-
-  if (!response.ok) {
-    throw new Error(`Overpass API returned ${response.status}. Please try again.`);
-  }
-
-  const data = await response.json();
+  const data = await queryOverpass(query);
   let resources = (data.elements || [])
     .map(el => parseResource(el, lat, lng))
     .filter(Boolean);
@@ -223,25 +287,17 @@ export async function fetchNearbyResources(lat, lng, typeFilter = null) {
   if (resources.length < 3) {
     const expandedQuery = buildOverpassQuery(lat, lng, EXPANDED_RADIUS);
     try {
-      const expandedResponse = await fetch(OVERPASS_ENDPOINT, {
-        method: 'POST',
-        body: `data=${encodeURIComponent(expandedQuery)}`,
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      });
+      const expandedData = await queryOverpass(expandedQuery);
+      let expandedResources = (expandedData.elements || [])
+        .map(el => parseResource(el, lat, lng))
+        .filter(Boolean);
 
-      if (expandedResponse.ok) {
-        const expandedData = await expandedResponse.json();
-        let expandedResources = (expandedData.elements || [])
-          .map(el => parseResource(el, lat, lng))
-          .filter(Boolean);
+      expandedResources = deduplicateResources(expandedResources);
+      expandedResources.sort((a, b) => a.distanceKm - b.distanceKm);
 
-        expandedResources = deduplicateResources(expandedResources);
-        expandedResources.sort((a, b) => a.distanceKm - b.distanceKm);
-
-        if (expandedResources.length > resources.length) {
-          resources = expandedResources;
-          expanded = true;
-        }
+      if (expandedResources.length > resources.length) {
+        resources = expandedResources;
+        expanded = true;
       }
     } catch (err) {
       console.warn('Expanded search failed:', err.message);
