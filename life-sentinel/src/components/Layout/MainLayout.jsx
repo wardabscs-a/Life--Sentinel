@@ -1,11 +1,11 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useSafety } from '../../contexts/SafetyContext';
 import LocationGate from './LocationGate';
 import {
-  Menu, X, Moon, Sun, Globe, Shield, PhoneCall,
+  Moon, Sun, Globe, Shield, PhoneCall,
   LayoutDashboard, Bot, BookOpen, Settings
 } from 'lucide-react';
 
@@ -18,7 +18,6 @@ const NAV_ITEMS = [
 ];
 
 export default function MainLayout() {
-  const [sidebarOpen, setSidebarOpen] = useState(false);
   const { t, toggleLanguage, language } = useLanguage();
   const { darkMode, toggleDarkMode } = useTheme();
   const { location } = useSafety();
@@ -28,52 +27,14 @@ export default function MainLayout() {
   const currentPath = routerLocation.pathname;
 
   return (
-    <div className="flex h-screen overflow-hidden" style={{ background: 'var(--color-bg)' }}>
-      {/* Mobile overlay */}
-      {sidebarOpen && (
-        <div
-          className="fixed inset-0 bg-black/50 z-40 lg:hidden"
-          onClick={() => setSidebarOpen(false)}
-        />
-      )}
-
-      {/* Sidebar — Emergency Services Only */}
-      <aside
-        className={`fixed lg:static inset-y-0 left-0 z-50 w-64 transform transition-transform duration-300 lg:translate-x-0 flex flex-col ${
-          sidebarOpen ? 'translate-x-0' : '-translate-x-full'
-        }`}
-        style={{ background: 'var(--color-sidebar)', borderRight: '1px solid var(--color-border)' }}
-      >
-        {/* Logo */}
-        <div className="flex items-center gap-3 p-5 border-b" style={{ borderColor: 'var(--color-border)' }}>
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-sentinel-500 to-sentinel-700 flex items-center justify-center">
-            <Shield className="w-6 h-6 text-white" />
-          </div>
-          <div>
-            <h1 className="font-bold text-lg leading-tight" style={{ color: 'var(--color-text)' }}>Life Sentinel</h1>
-            <p className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>{t('sidebar.tagline')} · {t('sidebar.management')}</p>
-          </div>
-          <button onClick={() => setSidebarOpen(false)} className="lg:hidden ml-auto p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-      </aside>
-
+    <div className="flex h-screen overflow-hidden w-full" style={{ background: 'var(--color-bg)' }}>
       {/* Main content */}
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden w-full">
         {/* Top bar */}
         <header
           className="flex items-center gap-3 px-4 py-3 border-b flex-shrink-0"
           style={{ background: 'var(--color-card)', borderColor: 'var(--color-border)' }}
         >
-          <button
-            onClick={() => setSidebarOpen(true)}
-            className="lg:hidden p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
-          >
-            <Menu className="w-5 h-5" />
-          </button>
-
           {/* Branding */}
           <div className="flex items-center gap-2 flex-shrink-0">
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-sentinel-500 to-sentinel-700 flex items-center justify-center">
