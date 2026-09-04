@@ -1,9 +1,8 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useSafety } from '../contexts/SafetyContext';
 import { getNearbyResources } from '../services/emergencyService';
-import { MOCK_RESOURCES } from '../data/mockData';
-import { Building2, Phone, Navigation, MapPin, Search, Cross, Shield, Flame, Home, Truck } from 'lucide-react';
+import { Building2, Phone, Navigation, MapPin, Search, Cross, Shield, Flame, Home, Truck, Loader2 } from 'lucide-react';
 
 const TYPE_ICONS = {
   hospital: Cross,
@@ -25,22 +24,53 @@ export default function EmergencyResources() {
   const { location } = useSafety();
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('all');
+  const [resources, setResources] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  const lat = location?.lat;
+  const lng = location?.lng;
+
+  useEffect(() => {
+    if (!lat || !lng) {
+      setResources([]);
+      setError(null);
+      return;
+    }
+
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+
+    getNearbyResources({ lat, lng }, typeFilter === 'all' ? null : typeFilter)
+      .then(data => {
+        if (cancelled) return;
+        setResources(data || []);
+      })
+      .catch(err => {
+        if (cancelled) return;
+        console.error('Nearby resources error:', err);
+        setError(t('map.fetchError'));
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [lat, lng, typeFilter, t]);
 
   const filteredResources = useMemo(() => {
-    let resources = MOCK_RESOURCES;
-    if (typeFilter !== 'all') {
-      resources = resources.filter(r => r.type === typeFilter);
-    }
+    let result = resources;
     if (search.trim()) {
       const q = search.toLowerCase();
-      resources = resources.filter(r =>
-        r.name.toLowerCase().includes(q) ||
-        r.address.toLowerCase().includes(q) ||
-        r.type.toLowerCase().includes(q)
+      result = result.filter(r =>
+        r.name?.toLowerCase().includes(q) ||
+        r.address?.toLowerCase().includes(q) ||
+        r.type?.toLowerCase().includes(q)
       );
     }
-    return resources;
-  }, [search, typeFilter]);
+    return result;
+  }, [resources, search]);
 
   const types = ['all', 'hospital', 'police', 'fire', 'shelter', 'ambulance'];
 
@@ -83,7 +113,30 @@ export default function EmergencyResources() {
         </div>
       </div>
 
+      {/* Loading / Error / Location states */}
+      {loading && (
+        <div className="card p-6 flex items-center justify-center gap-3" style={{ color: 'var(--color-text-secondary)' }}>
+          <Loader2 className="w-5 h-5 animate-spin" />
+          <span>{t('map.searching')}</span>
+        </div>
+      )}
+
+      {!loading && !location?.lat && (
+        <div className="card p-6 text-center">
+          <MapPin className="w-10 h-10 mx-auto mb-3" style={{ color: 'var(--color-text-secondary)', opacity: 0.5 }} />
+          <p className="font-semibold" style={{ color: 'var(--color-text)' }}>{t('map.allowLocation')}</p>
+        </div>
+      )}
+
+      {!loading && error && (
+        <div className="card p-6 text-center border border-emergency-200 dark:border-emergency-800 bg-emergency-50 dark:bg-emergency-900/10">
+          <p className="font-semibold text-emergency-700 dark:text-emergency-400">{t('common.error')}</p>
+          <p className="text-sm mt-1" style={{ color: 'var(--color-text-secondary)' }}>{error}</p>
+        </div>
+      )}
+
       {/* Resource Grid */}
+      {!loading && !error && location?.lat && (
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         {filteredResources.map(resource => {
           const TypeIcon = TYPE_ICONS[resource.type] || Building2;
@@ -121,11 +174,13 @@ export default function EmergencyResources() {
           );
         })}
       </div>
+      )}
 
-      {filteredResources.length === 0 && (
+      {!loading && !error && location?.lat && filteredResources.length === 0 && (
         <div className="card text-center p-8">
           <Building2 className="w-12 h-12 mx-auto mb-3" style={{ color: 'var(--color-text-secondary)', opacity: 0.3 }} />
           <p className="font-semibold" style={{ color: 'var(--color-text)' }}>{t('map.noResults')}</p>
+          <p className="text-sm mt-1" style={{ color: 'var(--color-text-secondary)' }}>{t('map.expandedSearch')}</p>
         </div>
       )}
     </div>

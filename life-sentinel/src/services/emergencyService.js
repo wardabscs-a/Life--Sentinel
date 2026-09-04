@@ -2,7 +2,7 @@
 // Uses backend API when configured, falls back to mock data for demo
 // Never simulates success — always reports actual outcome honestly
 
-import { MOCK_RESOURCES, MOCK_ALERTS, MOCK_COMMUNITY_INCIDENTS, MOCK_ROUTES } from '../data/mockData';
+import { MOCK_ALERTS, MOCK_COMMUNITY_INCIDENTS, MOCK_ROUTES } from '../data/mockData';
 import { isBackendConfigured, apiSubmitReport, apiActivateSOS, apiDeactivateSOS, apiNotifyContact, apiGetResources, ApiError } from './apiClient';
 import { getWeatherAlerts } from './weatherService';
 import { fetchNearbyResources, haversineDistance } from './placesService';
@@ -229,8 +229,10 @@ export async function deactivateSOS(sosId, userId) {
 // ===== Data Retrieval =====
 
 /**
- * Get nearby emergency resources based on location and category
- * Uses real Overpass API data when available, falls back to mock data
+ * Get nearby emergency resources based on location and category.
+ * Uses backend API when configured, otherwise queries the real Overpass API.
+ * Throws an error if the API fails so callers can show a clear error state
+ * instead of silently showing placeholder/demo data.
  */
 export async function getNearbyResources(location, category) {
   if (isBackendConfigured() && location) {
@@ -242,27 +244,18 @@ export async function getNearbyResources(location, category) {
     }
   }
 
-  // Use real Overpass API data
+  // Use real Overpass API data (OpenStreetMap)
   if (location) {
     try {
       const { resources } = await fetchNearbyResources(location.lat, location.lng, category);
-      if (resources.length > 0) return resources;
+      return resources;
     } catch (err) {
-      console.error('Overpass resources failed, using local data:', err);
+      console.error('Overpass resources failed:', err);
+      throw err;
     }
   }
 
-  // Final fallback — mock data
-  const typeMap = {
-    fire: ['fire', 'ambulance', 'hospital'],
-    flood: ['shelter', 'ambulance', 'hospital'],
-    medical: ['hospital', 'ambulance'],
-    accident: ['hospital', 'ambulance', 'police'],
-    crime: ['police'],
-    earthquake: ['shelter', 'hospital', 'fire'],
-  };
-  const types = category ? (typeMap[category] || null) : null;
-  return types ? MOCK_RESOURCES.filter(r => types.includes(r.type)) : MOCK_RESOURCES;
+  throw new Error('Location is required to fetch nearby resources.');
 }
 
 /**
