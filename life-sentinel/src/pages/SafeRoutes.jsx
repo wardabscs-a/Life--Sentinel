@@ -3,7 +3,7 @@ import { useLanguage } from '../contexts/LanguageContext';
 import { useSafety } from '../contexts/SafetyContext';
 import { MOCK_ROUTES } from '../data/mockData';
 import { haversineDistance } from '../services/placesService';
-import { Route, AlertTriangle, CheckCircle, MapPin, Info, Navigation } from 'lucide-react';
+import { Route, AlertTriangle, CheckCircle, MapPin, Info, Navigation, ExternalLink } from 'lucide-react';
 
 export default function SafeRoutes() {
   const { t } = useLanguage();
@@ -47,6 +47,30 @@ export default function SafeRoutes() {
 
   const hazardousRoutes = nearbyRoutes.filter(r => r.status === 'hazardous');
   const safeRoutes = nearbyRoutes.filter(r => r.status === 'safe');
+
+  /**
+   * Open external map navigation for a route.
+   * Uses the route's last coordinate as the destination, or the first coordinate
+   * if only one coordinate is available. The user's current location is used as
+   * the origin when available; otherwise only the destination is passed.
+   */
+  const navigateToRoute = (route) => {
+    if (!route?.coordinates || route.coordinates.length === 0) return;
+
+    // Safest available destination: prefer the last coordinate as the route endpoint
+    const destinationCoords = route.coordinates[route.coordinates.length - 1];
+    const destination = `${destinationCoords[0]},${destinationCoords[1]}`;
+
+    let url;
+    if (location && locationPermission === 'granted') {
+      const origin = `${location.lat},${location.lng}`;
+      url = `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destination)}`;
+    } else {
+      url = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(destination)}`;
+    }
+
+    window.open(url, '_blank', 'noopener,noreferrer');
+  };
 
   return (
     <div className="max-w-4xl mx-auto space-y-6 animate-fade-in">
@@ -112,6 +136,9 @@ export default function SafeRoutes() {
             <AlertTriangle className="w-5 h-5" />
             {t('routes.hazardous')}
           </h2>
+          <p className="text-xs mb-2" style={{ color: 'var(--color-text-secondary)' }}>
+            {t('routes.communityHazardsLabel', 'Community-reported hazards (not from live traffic data)')}
+          </p>
           <div className="space-y-3">
             {hazardousRoutes.map(route => (
               <div key={route.id} className="card border-l-4 border-emergency-500 bg-emergency-50 dark:bg-emergency-900/10">
@@ -129,6 +156,14 @@ export default function SafeRoutes() {
                           <MapPin className="w-3 h-3 mr-1" />{route.distance < 1 ? `${Math.round(route.distance * 1000)} m` : `${route.distance.toFixed(1)} km`} {t('common.away')}
                         </span>
                       )}
+                      <button
+                        onClick={() => navigateToRoute(route)}
+                        className="inline-flex items-center gap-1 text-xs font-semibold text-sentinel-600 hover:underline"
+                        title={t('routes.navigateTo', 'Navigate to {name}').replace('{name}', route.name)}
+                      >
+                        <ExternalLink className="w-3 h-3" />
+                        {t('routes.navigate', 'Navigate')}
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -145,6 +180,9 @@ export default function SafeRoutes() {
             <CheckCircle className="w-5 h-5" />
             {t('routes.safe')}
           </h2>
+          <p className="text-xs mb-2" style={{ color: 'var(--color-text-secondary)' }}>
+            {t('routes.communitySafeLabel', 'Community-reported routes with no known hazards')}
+          </p>
           <div className="space-y-3">
             {safeRoutes.map(route => (
               <div key={route.id} className="card border-l-4 border-safe-500 bg-safe-50 dark:bg-safe-900/10">
@@ -162,6 +200,14 @@ export default function SafeRoutes() {
                           <MapPin className="w-3 h-3 mr-1" />{route.distance < 1 ? `${Math.round(route.distance * 1000)} m` : `${route.distance.toFixed(1)} km`} {t('common.away')}
                         </span>
                       )}
+                      <button
+                        onClick={() => navigateToRoute(route)}
+                        className="inline-flex items-center gap-1 text-xs font-semibold text-sentinel-600 hover:underline"
+                        title={t('routes.navigateTo', 'Navigate to {name}').replace('{name}', route.name)}
+                      >
+                        <ExternalLink className="w-3 h-3" />
+                        {t('routes.navigate', 'Navigate')}
+                      </button>
                     </div>
                   </div>
                 </div>

@@ -257,6 +257,10 @@ export const translations = {
     'routes.tip3': 'Share your route with a trusted contact before traveling in hazardous conditions.',
     'routes.tip4': 'Check community incident reports along your planned route before departing.',
     'routes.footer': 'Route hazard data is from community reports. Real-time traffic data is not currently available. Distances are calculated from your current location.',
+    'routes.communityHazardsLabel': 'Community-reported hazards (not from live traffic data)',
+    'routes.communitySafeLabel': 'Community-reported routes with no known hazards',
+    'routes.navigate': 'Navigate',
+    'routes.navigateTo': 'Navigate to {name}',
     // Resources
     'resources.title': 'Emergency Resources', 'resources.subtitle': 'Nearby emergency services',
     'resources.all': 'All', 'resources.navigate': 'Navigate',
@@ -1093,6 +1097,10 @@ export const translations = {
     'routes.tip3': 'خطرناک حالات میں سفر سے پہلے اپنا راستہ کسی قابل اعتماد رابطے کو بتائیں۔',
     'routes.tip4': 'روانگی سے پہلے اپنے منصوبہ بند راستے کے ساتھ کمیونٹی واقعات کی رپورٹیں چیک کریں۔',
     'routes.footer': 'راستے کے خطرے کا ڈیٹا کمیونٹی رپورٹوں سے ہے۔ ریئل ٹائم ٹریفک ڈیٹا فی الحال دستیاب نہیں۔ فاصلے آپ کے موجودہ مقام سے حساب کیے گئے ہیں۔',
+    'routes.communityHazardsLabel': 'کمیونٹی سے رپورٹ شدہ خطرات (ریئل ٹائم ٹریفک کے ڈیٹا سے نہیں)',
+    'routes.communitySafeLabel': 'کمیونٹی سے رپورٹ شدہ راستے جن کے بارے میں کوئی خطرہ معلوم نہیں',
+    'routes.navigate': 'نیویگیٹ کریں',
+    'routes.navigateTo': '{name} کی طرف نیویگیٹ کریں',
     // Resources
     'resources.title': 'ایمرجنسی وسائل', 'resources.subtitle': 'قریبی ایمرجنسی سروسز',
     'resources.all': 'سب', 'resources.navigate': 'نیویگیٹ کریں',
