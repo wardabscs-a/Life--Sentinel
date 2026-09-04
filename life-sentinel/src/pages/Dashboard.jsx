@@ -6,11 +6,23 @@ import { useAuth } from '../contexts/AuthContext';
 import {
   MapPin, AlertTriangle, Map, Bell, Route,
   Users, Shield, Zap, Activity, Bot, ArrowRight, UserCheck,
-  Thermometer, MapPinned, ShieldAlert
+  Thermometer, MapPinned, ShieldAlert,
+  Phone, Siren, ShieldCheck, Truck, Flame, AlertTriangle as AlertTriangleIcon
 } from 'lucide-react';
 import SOSButton from '../components/Layout/SOSButton';
 import { MOCK_ALERTS, MOCK_COMMUNITY_INCIDENTS, MOCK_ROUTES } from '../data/mockData';
 import { haversineDistance } from '../services/placesService';
+
+// Emergency contacts shown compactly at the bottom of the Dashboard
+const EMERGENCY_CONTACTS = [
+  { nameKey: 'sidebar.rescue1122', number: '1122', icon: Siren, color: '#ef4444' },
+  { nameKey: 'sidebar.police', number: '15', icon: ShieldCheck, color: '#3b82f6' },
+  { nameKey: 'sidebar.edhi', number: '115', icon: Truck, color: '#22c55e' },
+  { nameKey: 'sidebar.fireBrigade', number: '16', icon: Flame, color: '#f97316' },
+  { nameKey: 'sidebar.motorwayPolice', number: '130', icon: Shield, color: '#8b5cf6' },
+  { nameKey: 'sidebar.bombDisposal', number: '111-222-555', icon: AlertTriangleIcon, color: '#f59e0b' },
+  { nameKey: 'sidebar.wapda', number: '118', icon: Zap, color: '#eab308' },
+];
 
 export default function Dashboard() {
   const { t } = useLanguage();
@@ -246,6 +258,41 @@ export default function Dashboard() {
             </Link>
           );
         })}
+      </div>
+
+      {/* Emergency Contacts */}
+      <div className="card p-3 sm:p-4">
+        <h2 className="text-sm sm:text-base font-bold mb-3 flex items-center gap-2" style={{ color: 'var(--color-text)' }}>
+          <Phone className="w-4 h-4 sm:w-5 sm:h-5 text-sentinel-500" />
+          {t('dashboard.emergencyContacts')}
+        </h2>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+          {EMERGENCY_CONTACTS.map((contact, i) => {
+            const Icon = contact.icon;
+            return (
+              <a
+                key={i}
+                href={`tel:${contact.number}`}
+                className="flex items-center gap-2 sm:gap-3 px-2 sm:px-3 py-2.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors min-h-[44px]"
+                style={{ background: 'var(--color-bg-secondary)' }}
+              >
+                <div
+                  className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg flex items-center justify-center flex-shrink-0"
+                  style={{ background: `${contact.color}15` }}
+                >
+                  <Icon className="w-3.5 h-3.5 sm:w-4 sm:h-4" style={{ color: contact.color }} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[11px] sm:text-xs font-semibold truncate" style={{ color: 'var(--color-text)' }}>
+                    {t(contact.nameKey)}
+                  </p>
+                  <p className="text-[10px] sm:text-xs font-bold text-sentinel-600">{contact.number}</p>
+                </div>
+                <Phone className="w-3.5 h-3.5 flex-shrink-0 text-sentinel-500" />
+              </a>
+            );
+          })}
+        </div>
       </div>
 
       {/* Disclaimer */}

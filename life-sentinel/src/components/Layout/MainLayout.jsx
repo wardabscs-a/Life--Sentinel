@@ -5,21 +5,9 @@ import { useTheme } from '../../contexts/ThemeContext';
 import { useSafety } from '../../contexts/SafetyContext';
 import LocationGate from './LocationGate';
 import {
-  Menu, X, Moon, Sun, Globe, Shield, Phone, PhoneCall,
-  Siren, ShieldCheck, Truck, Flame, AlertTriangle, Zap,
+  Menu, X, Moon, Sun, Globe, Shield, PhoneCall,
   LayoutDashboard, Bot, BookOpen, Settings
 } from 'lucide-react';
-
-// Emergency services for the sidebar — sourced from existing EMERGENCY_GUIDE data
-const EMERGENCY_SERVICES = [
-  { nameKey: 'sidebar.rescue1122', number: '1122', descKey: 'sidebar.rescue1122Desc', icon: Siren, color: '#ef4444' },
-  { nameKey: 'sidebar.police', number: '15', descKey: 'sidebar.policeDesc', icon: ShieldCheck, color: '#3b82f6' },
-  { nameKey: 'sidebar.edhi', number: '115', descKey: 'sidebar.edhiDesc', icon: Truck, color: '#22c55e' },
-  { nameKey: 'sidebar.fireBrigade', number: '16', descKey: 'sidebar.fireBrigadeDesc', icon: Flame, color: '#f97316' },
-  { nameKey: 'sidebar.motorwayPolice', number: '130', descKey: 'sidebar.motorwayPoliceDesc', icon: Shield, color: '#8b5cf6' },
-  { nameKey: 'sidebar.bombDisposal', number: '111-222-555', descKey: 'sidebar.bombDisposalDesc', icon: AlertTriangle, color: '#f59e0b' },
-  { nameKey: 'sidebar.wapda', number: '118', descKey: 'sidebar.wapdaDesc', icon: Zap, color: '#eab308' },
-];
 
 // Bottom navigation items
 const NAV_ITEMS = [
@@ -70,43 +58,6 @@ export default function MainLayout() {
           </button>
         </div>
 
-        {/* Emergency Services */}
-        <div className="flex-1 overflow-y-auto py-4 px-3">
-          <p className="px-3 mb-3 text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--color-text-secondary)' }}>
-            {t('sidebar.emergencyServices')}
-          </p>
-          <div className="space-y-1">
-            {EMERGENCY_SERVICES.map((service, i) => (
-              <a
-                key={i}
-                href={`tel:${service.number}`}
-                className="flex items-center gap-3 px-3 py-3 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors group"
-              >
-                <div
-                  className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
-                  style={{ background: `${service.color}15` }}
-                >
-                  <service.icon className="w-4.5 h-4.5" style={{ color: service.color }} />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold truncate" style={{ color: 'var(--color-text)' }}>{t(service.nameKey)}</p>
-                  <p className="text-xs truncate" style={{ color: 'var(--color-text-secondary)' }}>{t(service.descKey)}</p>
-                </div>
-                <div className="flex items-center gap-1.5 flex-shrink-0">
-                  <Phone className="w-3.5 h-3.5 text-sentinel-500 group-hover:text-sentinel-600 transition-colors" />
-                  <span className="text-sm font-bold text-sentinel-600">{service.number}</span>
-                </div>
-              </a>
-            ))}
-          </div>
-        </div>
-
-        {/* Sidebar footer */}
-        <div className="p-4 border-t text-center" style={{ borderColor: 'var(--color-border)' }}>
-          <p className="text-[10px]" style={{ color: 'var(--color-text-secondary)' }}>
-            {t('sidebar.tapToCall')}
-          </p>
-        </div>
       </aside>
 
       {/* Main content */}
