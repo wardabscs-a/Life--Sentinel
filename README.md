@@ -1,5 +1,5 @@
 # Life Sentinel
-https://lifesentinel-dskqjlx5d-warda-amir.vercel.app/
+https://lifesentinel.vercel.app/
 > A responsive emergency-awareness web application that helps people assess risks, find nearby resources, manage trusted contacts, report incidents, and access safety guidance.
 
 Life Sentinel combines browser location services, live weather signals, mapping data, Firebase Authentication, Cloud Firestore, and emergency-focused workflows in a React single-page application.
