@@ -18,9 +18,6 @@ export const SEVERITY_LEVELS = [
   { id: 'low', level: 1, color: '#22c55e', bgColor: '#f0fdf4' },
 ];
 
-// Demo: Islamabad coordinates
-export const DEFAULT_LOCATION = { lat: 33.6844, lng: 73.0479, address: 'Islamabad, Pakistan' };
-
 export const MOCK_RESOURCES = [
   { id: 1, name: 'PIMS Hospital', type: 'hospital', lat: 33.7294, lng: 73.0931, phone: '+92-51-9261151', address: 'Sector G-8/3, Islamabad', distance: '2.1 km' },
   { id: 2, name: 'Shifa International Hospital', type: 'hospital', lat: 33.7019, lng: 73.0479, phone: '+92-51-8464646', address: 'Sector H-8/4, Islamabad', distance: '3.5 km' },

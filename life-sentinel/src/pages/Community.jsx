@@ -70,7 +70,7 @@ export default function Community() {
   const resolvedCount = nearbyIncidents.filter(i => i.status === 'resolved').length;
   const totalReports = nearbyIncidents.reduce((sum, i) => sum + i.reportCount, 0);
 
-  const center = location ? [location.lat, location.lng] : [33.6844, 73.0479];
+  const center = [location.lat, location.lng];
 
   return (
     <div className="max-w-7xl mx-auto space-y-6 animate-fade-in">

@@ -3,6 +3,7 @@ import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useSafety } from '../../contexts/SafetyContext';
+import LocationGate from './LocationGate';
 import {
   Menu, X, Moon, Sun, Globe, Shield, Phone, PhoneCall,
   Siren, ShieldCheck, Truck, Flame, AlertTriangle, Zap,
@@ -178,9 +179,11 @@ export default function MainLayout() {
           </div>
         </header>
 
-        {/* Page content */}
+        {/* Page content — gated on location for all protected routes */}
         <main className="flex-1 overflow-y-auto p-4 md:p-6 pb-20" style={{ background: 'var(--color-bg-secondary)' }}>
-          <Outlet />
+          <LocationGate>
+            <Outlet />
+          </LocationGate>
         </main>
 
         {/* Bottom Navigation Bar */}

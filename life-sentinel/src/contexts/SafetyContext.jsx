@@ -1,5 +1,4 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
-import { DEFAULT_LOCATION } from '../data/mockData';
 import { getCurrentWeather, getWeatherAlerts } from '../services/weatherService';
 import { reverseGeocode } from '../services/placesService';
 import { useLanguage } from './LanguageContext';
@@ -9,8 +8,9 @@ const SafetyContext = createContext(null);
 export function SafetyProvider({ children }) {
   const { t, language } = useLanguage();
   const [location, setLocation] = useState(null);
-  const [locationPermission, setLocationPermission] = useState('prompt'); // 'granted', 'denied', 'prompt'
+  const [locationPermission, setLocationPermission] = useState('prompt'); // 'granted', 'denied', 'prompt', 'unavailable'
   const [locationLoading, setLocationLoading] = useState(true);
+  const [locationError, setLocationError] = useState(null);
   const [sosActive, setSosActive] = useState(false);
   const [safetyStatus, setSafetyStatus] = useState('safe');
   const [emergencyReports, setEmergencyReports] = useState([]);
@@ -30,13 +30,18 @@ export function SafetyProvider({ children }) {
   // --- Location ---
   const fetchLocation = useCallback(() => {
     if (!navigator.geolocation) {
-      setLocation(DEFAULT_LOCATION);
-      setLocationPermission('denied');
+      console.warn('[Life Sentinel] Geolocation API is not supported by this browser.');
+      setLocation(null);
+      setLocationPermission('unavailable');
+      setLocationError({ code: 0, message: 'Geolocation is not supported by this browser.' });
       setLocationLoading(false);
       return;
     }
 
+    console.log('[Life Sentinel] Location request started.');
     setLocationLoading(true);
+    setLocationError(null);
+
     navigator.geolocation.getCurrentPosition(
       async (pos) => {
         const { latitude, longitude, accuracy } = pos.coords;
@@ -47,6 +52,7 @@ export function SafetyProvider({ children }) {
           accuracy,
           address: coordAddr,
         };
+        console.log('[Life Sentinel] Location successfully received:', newLoc);
         setLocation(newLoc);
         setLocationPermission('granted');
         setLocationLoading(false);
@@ -60,25 +66,74 @@ export function SafetyProvider({ children }) {
         });
       },
       (err) => {
-        console.warn('Geolocation error:', err.message);
+        console.warn('[Life Sentinel] Geolocation error:', err.code, err.message);
+        setLocation(null);
+        setLocationError({ code: err.code, message: err.message });
+
         if (err.code === 1) {
+          // PERMISSION_DENIED
           setLocationPermission('denied');
+        } else if (err.code === 2) {
+          // POSITION_UNAVAILABLE
+          setLocationPermission('unavailable');
+        } else if (err.code === 3) {
+          // TIMEOUT
+          setLocationPermission('unavailable');
+        } else {
+          setLocationPermission('unavailable');
         }
-        setLocation(DEFAULT_LOCATION);
         setLocationLoading(false);
       },
       { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
     );
   }, []);
 
-  // Get location on mount
+  // Check permission state and request location on mount
   useEffect(() => {
-    fetchLocation();
+    let permissionStatusRef = null;
+
+    const checkPermissionAndFetch = async () => {
+      if (navigator.permissions && navigator.permissions.query) {
+        try {
+          const permissionStatus = await navigator.permissions.query({ name: 'geolocation' });
+          permissionStatusRef = permissionStatus;
+          console.log('[Life Sentinel] Geolocation permission state:', permissionStatus.state);
+          setLocationPermission(permissionStatus.state); // 'granted', 'prompt', or 'denied'
+
+          // Listen for permission changes (e.g., user resets permission in browser settings)
+          const handleChange = () => {
+            console.log('[Life Sentinel] Geolocation permission state changed:', permissionStatus.state);
+            setLocationPermission(permissionStatus.state);
+            if (permissionStatus.state === 'granted') {
+              fetchLocation();
+            }
+          };
+          permissionStatus.onchange = handleChange;
+
+          // Always attempt to fetch; if state is 'denied', getCurrentPosition will fail quickly.
+          fetchLocation();
+        } catch (err) {
+          console.warn('[Life Sentinel] Could not query geolocation permission:', err);
+          fetchLocation();
+        }
+      } else {
+        console.log('[Life Sentinel] Permissions API not supported; attempting geolocation directly.');
+        fetchLocation();
+      }
+    };
+
+    checkPermissionAndFetch();
+
+    return () => {
+      if (permissionStatusRef) {
+        permissionStatusRef.onchange = null;
+      }
+    };
   }, [fetchLocation]);
 
   // --- Weather (fetch when location changes) ---
   useEffect(() => {
-    if (!location || location === DEFAULT_LOCATION) return;
+    if (!location) return;
 
     let cancelled = false;
     setWeatherLoading(true);
@@ -167,7 +222,7 @@ export function SafetyProvider({ children }) {
   return (
     <SafetyContext.Provider value={{
       // Location
-      location, setLocation, locationPermission, locationLoading, fetchLocation,
+      location, setLocation, locationPermission, locationLoading, locationError, fetchLocation,
       // SOS
       sosActive, activateSOS, deactivateSOS, sosTimestamp, sosId, sosNotifications,
       // Safety

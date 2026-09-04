@@ -124,7 +124,7 @@ export default function EmergencyMap() {
     return () => { cancelled = true; };
   }, [location?.lat, location?.lng, locationLoading]);
 
-  const center = location ? [location.lat, location.lng] : [33.6844, 73.0479];
+  const center = [location.lat, location.lng];
 
   // Filter resources by active filter (applied client-side for instant filtering)
   const filteredResources = useMemo(() => {

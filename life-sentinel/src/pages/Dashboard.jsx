@@ -47,7 +47,8 @@ export default function Dashboard() {
   const activeIncidents = MOCK_COMMUNITY_INCIDENTS.filter(i => i.status === 'active' && isNearby(i.lat, i.lng)).length;
   const hazardousRoutes = MOCK_ROUTES.filter(r => {
     if (r.status !== 'hazardous') return false;
-    const coords = r.coordinates?.[0] || [33.6844, 73.0479];
+    const coords = r.coordinates?.[0];
+    if (!coords) return false;
     return isNearby(coords[0], coords[1]);
   }).length;
   const contactCount = user?.trustedContacts?.length || 0;
