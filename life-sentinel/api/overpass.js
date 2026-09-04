@@ -4,6 +4,10 @@
 
 const DEFAULT_ENDPOINT = 'https://overpass-api.de/api/interpreter';
 
+// Meaningful User-Agent identifying the Life Sentinel application.
+// Overpass API mirrors require this to avoid rate-limiting / 406 errors.
+const USER_AGENT = 'LifeSentinelApp/1.0 (https://lifesentinel.vercel.app; contact@lifesentinel.app)';
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     res.setHeader('Allow', ['POST']);
@@ -22,12 +26,25 @@ export default async function handler(req, res) {
 
     const overpassRes = await fetch(endpoint, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Accept': 'application/json',
+        'User-Agent': USER_AGENT,
+      },
       body: `data=${encodeURIComponent(query)}`,
       signal: controller.signal,
     });
 
     clearTimeout(timeoutId);
+
+    // Forward non-OK statuses with a clear message instead of blindly returning the body.
+    if (!overpassRes.ok) {
+      const errorText = await overpassRes.text().catch(() => '');
+      return res.status(overpassRes.status).json({
+        error: `Overpass endpoint returned HTTP ${overpassRes.status}`,
+        details: errorText.slice(0, 500),
+      });
+    }
 
     const text = await overpassRes.text();
 
