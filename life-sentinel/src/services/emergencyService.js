@@ -34,7 +34,7 @@ export async function submitEmergencyReport(report, t) {
         success: true,
         id: result.id || fullReport.reportId,
         status: 'submitted',
-        message: tr('report.successSubmitted', 'Emergency reported successfully. The report has been received and emergency services have been notified.'),
+        message: tr('report.successSubmitted', 'Emergency report recorded successfully. Your emergency details and location have been saved to Life Sentinel.'),
         backendResponse: result,
       };
     } catch (err) {
@@ -84,7 +84,7 @@ export async function submitEmergencyReport(report, t) {
       id: stored.id,
       status: firestoreSaved ? 'submitted' : 'stored_locally',
       message: firestoreSaved
-        ? tr('report.successSubmitted', 'Emergency reported successfully. The report has been received and emergency services have been notified.')
+        ? tr('report.successSubmitted', 'Emergency report recorded successfully. Your emergency details and location have been saved to Life Sentinel.')
         : tr('report.savedLocallyMsg', 'Emergency report saved locally. Backend server is not configured — please call emergency services directly (1122) for immediate help.'),
       backendNotConfigured: !firestoreSaved,
     };
@@ -101,24 +101,70 @@ export async function submitEmergencyReport(report, t) {
 // ===== SOS Activation =====
 
 /**
- * Activate SOS — notify trusted contacts with location
- * @param {Object} params - { userId, location, contacts }
+ * Activate SOS — send location + alert to trusted contacts.
+ *
+ * Backend mode (VITE_BACKEND_URL set): the backend verifies the Firebase user,
+ * reads trusted contacts from Firestore (server-side), stores the SOS event,
+ * and attempts automatic SMS delivery through the configured provider.
+ * It returns honest per-contact statuses:
+ *   sent           → provider confirmed submission
+ *   ready_to_send  → no provider configured; SMS deep link provided
+ *   failed         → provider/provider call failed
+ *
+ * If the backend is unreachable or errors, we fall back to the local
+ * SMS deep-link flow so SOS still works offline.
+ *
+ * @param {Object} params - { userId, location, contacts, t }
  * @returns {Object} { success, sosId, notifications, errors }
  */
 export async function activateSOS({ userId, location, contacts, t }) {
   const tr = (key, fallback) => (t ? t(key) : fallback);
   const sosId = 'SOS-' + Date.now();
   const timestamp = new Date().toISOString();
-  const locationStr = location
+  const hasLocation = location && Number.isFinite(location.lat) && Number.isFinite(location.lng);
+  const locationStr = hasLocation
     ? `${location.lat.toFixed(5)}, ${location.lng.toFixed(5)}${location.address ? ` (${location.address})` : ''}`
     : tr('common.locationUnavailable', 'Location unavailable');
 
-  const mapLink = location
+  const mapLink = hasLocation
     ? `https://www.google.com/maps?q=${location.lat},${location.lng}`
     : '';
 
-  const alertMessage = `🚨 ${tr('sos.alertHeader', 'LIFE SENTINEL SOS ALERT')} 🚨\n${tr('sos.emergencyActivated', 'Emergency SOS activated.')}\nTime: ${new Date(timestamp).toLocaleString()}\nLocation: ${locationStr}\n${mapLink ? `Map: ${mapLink}` : ''}\n${tr('sos.checkOnPerson', 'Please check on this person immediately.')}`;
+  const alertMessage =
+    `🚨 ${tr('sos.alertHeader', 'LIFE SENTINEL SOS ALERT')} 🚨\n` +
+    `${tr('sos.emergencyActivated', 'Emergency SOS activated.')}\n` +
+    `Time: ${new Date(timestamp).toLocaleString()}\n` +
+    `Location: ${locationStr}\n` +
+    (mapLink ? `Map: ${mapLink}\n` : '') +
+    `${tr('sos.checkOnPerson', 'Please check on this person immediately.')} ` +
+    `${tr('sos.contactEmergencyServices', 'If they are in danger, contact emergency services (1122) or go to their location.')}`;
 
+  // --- Backend mode: server handles contacts, storage, and SMS delivery ---
+  if (isBackendConfigured()) {
+    try {
+      const result = await apiActivateSOS({
+        userId,
+        location: hasLocation
+          ? {
+              lat: location.lat,
+              lng: location.lng,
+              accuracy: Number.isFinite(location.accuracy) ? location.accuracy : null,
+              address: location.address || null,
+            }
+          : null,
+        timestamp,
+        message: alertMessage,
+      });
+      if (result && Array.isArray(result.notifications)) {
+        return result;
+      }
+    } catch (err) {
+      // Backend unavailable/errored — fall through to the local SMS-link fallback
+      console.warn('Backend SOS activation failed, using local SMS-link fallback:', err.message);
+    }
+  }
+
+  // --- Local fallback: per-contact SMS deep links the user taps to send ---
   const notifications = [];
   const errors = [];
 
@@ -127,84 +173,44 @@ export async function activateSOS({ userId, location, contacts, t }) {
       success: false,
       sosId,
       notifications: [],
-      errors: [{ type: 'no_contacts', message: tr('sos.noContactsConfigMsg', 'No trusted contacts configured. Add contacts in Settings > Trusted Contacts.') }],
+      errors: [
+        {
+          type: 'no_contacts',
+          message: tr('sos.noContactsConfigMsg', 'No trusted contacts configured. Add contacts in Settings > Trusted Contacts.'),
+        },
+      ],
       alertMessage,
     };
   }
 
-  // Try backend notification first
-  if (isBackendConfigured()) {
-    try {
-      const result = await apiActivateSOS({
-        userId,
-        sosId,
-        location: location ? { lat: location.lat, lng: location.lng, address: location.address } : null,
-        contacts,
-        timestamp,
-      });
-
-      if (result.notifications) {
-        return {
-          success: true,
-          sosId,
-          notifications: result.notifications,
-          errors: [],
-          alertMessage,
-        };
-      }
-    } catch (err) {
-      errors.push({
-        type: 'backend_error',
-        message: err instanceof ApiError ? err.message : tr('sos.backendNotifyFailed', 'Backend notification failed.'),
-        retryable: err instanceof ApiError ? err.retryable : true,
-      });
-    }
-  }
-
-  // Fallback: attempt individual contact notifications
   for (const contact of contacts) {
-    try {
-      if (isBackendConfigured()) {
-        await apiNotifyContact({
-          contact: { name: contact.name, phone: contact.phone },
-          message: alertMessage,
-          location: location ? { lat: location.lat, lng: location.lng } : null,
-          type: 'sos',
-        });
-        notifications.push({
-          contact,
-          status: 'sent',
-          method: 'backend_api',
-          message: alertMessage,
-          timestamp: new Date().toISOString(),
-        });
-      } else {
-        // Backend not configured — generate SMS link as fallback
-        const smsBody = encodeURIComponent(alertMessage);
-        const smsLink = `sms:${contact.phone}?body=${smsBody}`;
-        notifications.push({
-          contact,
-          status: 'ready_to_send',
-          method: 'sms_link',
-          smsLink,
-          message: alertMessage,
-          timestamp: new Date().toISOString(),
-        });
-      }
-    } catch (err) {
+    const name = contact?.name || 'Unknown';
+    const phone = (contact?.phone || '').trim();
+    const smsLink = phone ? `sms:${phone}?body=${encodeURIComponent(alertMessage)}` : null;
+
+    notifications.push({
+      contact: { name, phone },
+      status: 'ready_to_send',
+      method: 'sms_link',
+      ...(smsLink ? { smsLink } : {}),
+      message: alertMessage,
+      timestamp: new Date().toISOString(),
+    });
+
+    if (!smsLink) {
       errors.push({
-        type: 'contact_failed',
-        contact: contact.name,
-        message: tr('sos.contactNotifyFailed', 'Failed to notify {name}: {error}').replace('{name}', contact.name).replace('{error}', err.message),
-        retryable: true,
+        type: 'invalid_contact',
+        contact: name,
+        message: tr('sos.contactNotifyFailed', 'Failed to notify {name}: {error}')
+          .replace('{name}', name)
+          .replace('{error}', 'missing phone number'),
+        retryable: false,
       });
     }
   }
 
-  const allSucceeded = notifications.length === contacts.length;
   return {
-    success: allSucceeded || (!isBackendConfigured() && notifications.length > 0),
-    partial: notifications.length > 0 && !allSucceeded,
+    success: notifications.length > 0,
     sosId,
     notifications,
     errors,

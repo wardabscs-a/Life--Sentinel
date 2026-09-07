@@ -9,7 +9,7 @@ import { AlertOctagon, CheckCircle, XCircle, Loader2, MapPin, Users, ExternalLin
 
 export default function SOSButton({ compact = false }) {
   const { t } = useLanguage();
-  const { sosActive, activateSOS, deactivateSOS, location, fetchLocation, sosNotifications, sosId } = useSafety();
+  const { sosActive, activateSOS, deactivateSOS, location, setLocation, locationPermission, locationLoading, sosNotifications, sosId } = useSafety();
   const { user } = useAuth();
   const { isHolding, progress, activated, startHold, endHold, reset } = useHoldToActivate(2000);
   const [showConfirm, setShowConfirm] = useState(false);
@@ -25,22 +25,42 @@ export default function SOSButton({ compact = false }) {
     }
   }, [activated, reset]);
 
+  // Capture the freshest GPS fix directly (promise-based so the SOS always
+  // uses a fresh position — never a stale value from a previous render).
+  // Resolves null when GPS is unavailable/denied; never fake coordinates.
+  const captureFreshLocation = () =>
+    new Promise((resolve) => {
+      if (!navigator.geolocation) return resolve(null);
+      navigator.geolocation.getCurrentPosition(
+        (pos) =>
+          resolve({
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+            accuracy: pos.coords.accuracy,
+            timestamp: new Date(pos.timestamp).toISOString(),
+            address: `${pos.coords.latitude.toFixed(4)}, ${pos.coords.longitude.toFixed(4)}`,
+          }),
+        () => resolve(null),
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      );
+    });
+
   const handleConfirmSOS = async () => {
     setShowConfirm(false);
     setIsActivating(true);
     setActivationResult(null);
 
-    // Refresh location before activating
-    try {
-      fetchLocation();
-      // Small delay for location to update
-      await new Promise(r => setTimeout(r, 1500));
-    } catch {}
+    // Capture a fresh GPS fix (falls back to last known location, then null)
+    const freshLoc = await captureFreshLocation();
+    const loc = freshLoc || location || null;
+
+    // Keep the safety context in sync with the freshest fix
+    if (freshLoc && setLocation) setLocation(freshLoc);
 
     const contacts = user?.trustedContacts || [];
     const result = await activateSOSService({
       userId: user?.id || 'anonymous',
-      location,
+      location: loc,
       contacts,
       t,
     });
@@ -60,18 +80,28 @@ export default function SOSButton({ compact = false }) {
   };
 
   const retryNotification = async (contact) => {
+    if (!contact?.phone) return; // nothing to retry without a phone number
     // Retry individual contact notification
     try {
-      await apiNotifyContact({
+      const result = await apiNotifyContact({
         contact: { name: contact.name, phone: contact.phone },
         message: activationResult?.alertMessage || 'SOS Alert',
         location: location ? { lat: location.lat, lng: location.lng } : null,
         type: 'sos',
       });
-      // Update local state on success
+      // Preserve the backend's verified result; never label an unconfigured or
+      // failed provider attempt as sent.
       setActivationResult(prev => ({
         ...prev,
-        notifications: [...(prev?.notifications || []), { contact, status: 'sent', method: 'retry' }],
+        notifications: [
+          ...(prev?.notifications || []),
+          {
+            contact: result.contact || contact,
+            status: result.status,
+            method: result.method || 'retry',
+            ...(result.smsLink ? { smsLink: result.smsLink } : {}),
+          },
+        ],
       }));
     } catch (err) {
       console.error('Retry failed:', err);
@@ -104,9 +134,13 @@ export default function SOSButton({ compact = false }) {
                   {t('sos.locationSharing')}
                 </span>
               </div>
-              {location && (
+              {location ? (
                 <p className="text-xs ml-6" style={{ color: 'var(--color-text-secondary)' }}>
                   {location.address} (±{Math.round(location.accuracy || 0)}m)
+                </p>
+              ) : (
+                <p className="text-xs ml-6 font-medium text-warning-700 dark:text-warning-400">
+                  {t('sos.noLocationWarning')}
                 </p>
               )}
 
@@ -132,7 +166,7 @@ export default function SOSButton({ compact = false }) {
                         <XCircle className="w-3.5 h-3.5 text-emergency-500" />
                       )}
                       <span style={{ color: 'var(--color-text)' }}>{n.contact.name}</span>
-                      <span className="badge badge-info text-[10px]">{n.status === 'sent' ? t('sos.sent') : n.status === 'ready_to_send' ? t('sos.ready') : n.status}</span>
+                      <span className="badge badge-info text-[10px]">{n.status === 'sent' ? t('sos.sent') : n.status === 'ready_to_send' ? t('sos.ready') : n.status === 'failed' ? t('sos.failed') : n.status}</span>
                       {n.smsLink && (
                         <a href={n.smsLink} className="text-sentinel-600 underline text-[10px]">{t('sos.openSms')}</a>
                       )}
@@ -142,7 +176,7 @@ export default function SOSButton({ compact = false }) {
                     <div key={i} className="flex items-center gap-2 text-xs ml-6 text-emergency-600">
                       <XCircle className="w-3.5 h-3.5" />
                       <span>{e.message}</span>
-                      {e.retryable && (
+                      {e.retryable && e.contact && (
                         <button onClick={() => retryNotification(e.contact)} className="underline">
                           {t('sos.retry')}
                         </button>
@@ -246,6 +280,13 @@ export default function SOSButton({ compact = false }) {
               <div className="mb-4 p-3 rounded-lg bg-warning-50 dark:bg-warning-900/20">
                 <p className="text-xs text-warning-700 dark:text-warning-400">
                   {t('sos.noContactsDesc')}
+                </p>
+              </div>
+            )}
+            {(locationPermission === 'denied' || (!location && !locationLoading)) && (
+              <div className="mb-4 p-3 rounded-lg bg-warning-50 dark:bg-warning-900/20">
+                <p className="text-xs text-warning-700 dark:text-warning-400">
+                  {t('sos.noLocationWarning')}
                 </p>
               </div>
             )}

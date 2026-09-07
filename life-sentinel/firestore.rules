@@ -12,6 +12,8 @@ service cloud.firestore {
     // ===== Emergency Reports =====
     // Authenticated users can create reports with their own userId
     // Users can read only their own reports
+    // Note: The backend (Firebase Admin SDK) bypasses these rules for
+    // dispatch dashboard access to all reports
     match /reports/{reportId} {
       allow create: if request.auth != null
                     && request.resource.data.userId == request.auth.uid;
@@ -19,6 +21,22 @@ service cloud.firestore {
                   && resource.data.userId == request.auth.uid;
       allow update, delete: if request.auth != null
                             && resource.data.userId == request.auth.uid;
+    }
+
+    // ===== SOS Events =====
+    // Users can read their own SOS events (written by backend)
+    match /sosEvents/{sosId} {
+      allow read: if request.auth != null
+                  && resource.data.userId == request.auth.uid;
+      allow create: if request.auth != null
+                    && request.resource.data.userId == request.auth.uid;
+    }
+
+    // ===== Notifications =====
+    // Users can read their own notification records
+    match /notifications/{notifId} {
+      allow read: if request.auth != null
+                  && resource.data.userId == request.auth.uid;
     }
 
     // ===== Deny everything else =====

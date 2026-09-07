@@ -1,9 +1,11 @@
 // API Client — centralized backend communication
 // Configure VITE_BACKEND_URL in .env to point to your backend server
 // When not configured, operates in demo mode with clear error states
+// All authenticated requests include a Firebase ID token in the Authorization header
+
+import { auth } from './firebase';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
-const BACKEND_API_KEY = import.meta.env.VITE_BACKEND_API_KEY;
 
 const hasBackend = BACKEND_URL && BACKEND_URL !== 'https://your-backend-api.com';
 
@@ -12,7 +14,22 @@ export function isBackendConfigured() {
 }
 
 /**
- * Generic API request helper
+ * Get a fresh Firebase ID token for the current user.
+ * Returns null if no user is signed in.
+ */
+async function getIdToken() {
+  try {
+    const user = auth.currentUser;
+    if (!user) return null;
+    return await user.getIdToken();
+  } catch (err) {
+    console.warn('Could not get Firebase ID token:', err.message);
+    return null;
+  }
+}
+
+/**
+ * Generic API request helper — attaches Firebase ID token automatically
  * @param {string} endpoint - API endpoint path (e.g. '/reports')
  * @param {Object} options - fetch options
  * @returns {Object} API response
@@ -27,9 +44,12 @@ async function apiRequest(endpoint, options = {}) {
   }
 
   const url = `${BACKEND_URL}${endpoint}`;
+
+  // Build headers — attach Firebase ID token for authentication
+  const idToken = await getIdToken();
   const headers = {
     'Content-Type': 'application/json',
-    ...(BACKEND_API_KEY ? { Authorization: `Bearer ${BACKEND_API_KEY}` } : {}),
+    ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
     ...options.headers,
   };
 
@@ -150,4 +170,67 @@ export async function apiGetIncidents(lat, lng, radiusKm = 10) {
 export async function apiGetResources(lat, lng, type) {
   const params = `lat=${lat}&lng=${lng}${type ? `&type=${type}` : ''}`;
   return apiRequest(`/api/resources?${params}`);
+}
+
+// === Admin / Dispatch Endpoints ===
+
+/**
+ * Get dashboard stats (admin only)
+ */
+export async function apiGetAdminStats() {
+  return apiRequest('/api/admin/stats');
+}
+
+/**
+ * Get all emergency reports (admin only)
+ * @param {Object} filters - { status, limit, userId }
+ */
+export async function apiGetAllReports(filters = {}) {
+  const params = new URLSearchParams();
+  if (filters.status) params.set('status', filters.status);
+  if (filters.limit) params.set('limit', String(filters.limit));
+  if (filters.userId) params.set('userId', filters.userId);
+  const qs = params.toString();
+  return apiRequest(`/api/reports${qs ? `?${qs}` : ''}`);
+}
+
+/**
+ * Get a single report by ID (owner or admin)
+ */
+export async function apiGetReport(reportId) {
+  return apiRequest(`/api/reports/${reportId}`);
+}
+
+/**
+ * Update report status (admin only)
+ * @param {string} reportId
+ * @param {string} status - NEW | ACKNOWLEDGED | ASSIGNED | RESOLVED
+ * @param {Object} meta - { notes, assignedTo }
+ */
+export async function apiUpdateReportStatus(reportId, status, meta = {}) {
+  return apiRequest(`/api/reports/${reportId}/status`, {
+    method: 'PATCH',
+    body: JSON.stringify({ status, ...meta }),
+  });
+}
+
+/**
+ * Get SOS events (admin only)
+ */
+export async function apiGetSOSEvents(filters = {}) {
+  const params = new URLSearchParams();
+  if (filters.status) params.set('status', filters.status);
+  if (filters.limit) params.set('limit', String(filters.limit));
+  const qs = params.toString();
+  return apiRequest(`/api/admin/sos-events${qs ? `?${qs}` : ''}`);
+}
+
+/**
+ * Resolve an SOS event (admin only)
+ */
+export async function apiResolveSOS(sosId, notes = '') {
+  return apiRequest(`/api/admin/sos-events/${sosId}/resolve`, {
+    method: 'PATCH',
+    body: JSON.stringify({ notes }),
+  });
 }

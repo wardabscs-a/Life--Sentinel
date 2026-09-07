@@ -23,6 +23,21 @@ import Guidance from './pages/Guidance';
 import GuidanceDetail from './pages/GuidanceDetail';
 import Harassment from './pages/Harassment';
 import Onboarding, { isOnboardingComplete } from './pages/Onboarding';
+import DispatchDashboard from './pages/DispatchDashboard';
+
+/** Simple wrapper for the dispatch dashboard — provides its own layout */
+function DispatchPage() {
+  return (
+    <div className="min-h-screen p-4 md:p-6" style={{ background: 'var(--color-bg)' }}>
+      <div className="max-w-6xl mx-auto">
+        <DispatchDashboard />
+        <div className="mt-4 text-center">
+          <a href="/dashboard" className="text-xs text-sentinel-500 hover:underline">← Back to Life Sentinel</a>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function AppRoutes() {
   const [onboardingDone, setOnboardingDone] = useState(isOnboardingComplete());
@@ -54,6 +69,9 @@ function AppRoutes() {
           <Route path="/harassment" element={<Harassment />} />
           <Route path="/settings" element={<ProfileSettings />} />
         </Route>
+
+        {/* Dispatch Dashboard — admin only, separate from main layout */}
+        <Route path="/dispatch" element={<ProtectedRoute><DispatchPage /></ProtectedRoute>} />
 
         {/* Catch-all */}
         <Route path="*" element={<Navigate to="/" replace />} />

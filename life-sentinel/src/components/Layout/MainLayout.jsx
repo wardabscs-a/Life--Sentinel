@@ -5,9 +5,25 @@ import { useTheme } from '../../contexts/ThemeContext';
 import { useSafety } from '../../contexts/SafetyContext';
 import LocationGate from './LocationGate';
 import {
-  Moon, Sun, Globe, Shield, PhoneCall,
+  Moon, Sun, Globe, Shield, PhoneCall, ArrowLeft,
   LayoutDashboard, Bot, BookOpen, Settings
 } from 'lucide-react';
+
+// Feature screens that return to the Dashboard from the shared page chrome.
+const DASHBOARD_FEATURE_PATHS = new Set([
+  '/report',
+  '/assistant',
+  '/map',
+  '/alerts',
+  '/community',
+  '/routes',
+  '/resources',
+  '/contacts',
+  '/guide',
+  '/guidance',
+  '/harassment',
+  '/settings',
+]);
 
 // Bottom navigation items
 const NAV_ITEMS = [
@@ -94,6 +110,20 @@ export default function MainLayout() {
         {/* Page content — gated on location for all protected routes */}
         <main className="flex-1 overflow-y-auto p-4 md:p-6 pb-20" style={{ background: 'var(--color-bg-secondary)' }}>
           <LocationGate>
+            {(DASHBOARD_FEATURE_PATHS.has(currentPath) || currentPath.startsWith('/guidance/')) && (
+              <div className="mb-2">
+                <button
+                  type="button"
+                  onClick={() => navigate('/dashboard')}
+                  className="inline-flex items-center justify-center p-1.5 -ml-1 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                  style={{ color: 'var(--color-text-secondary)' }}
+                  aria-label={t('nav.dashboard')}
+                  title={t('nav.dashboard')}
+                >
+                  <ArrowLeft className="w-4 h-4" />
+                </button>
+              </div>
+            )}
             <Outlet />
           </LocationGate>
         </main>
