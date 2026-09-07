@@ -234,3 +234,21 @@ export async function apiResolveSOS(sosId, notes = '') {
     body: JSON.stringify({ notes }),
   });
 }
+
+// === AI Assistant Endpoint ===
+
+/**
+ * Send an AI chat request to the Life Sentinel backend (server-side AI proxy).
+ * The AI API key is held server-side only — never exposed to the browser.
+ * @param {string} category - Emergency category (e.g. 'fire', 'medical', 'other')
+ * @param {string} message - Current user message
+ * @param {Array<{role: string, content: string}>} history - Conversation history
+ * @param {string} language - Language code ('en' | 'ur')
+ * @returns {Object} { success, content?, error? }
+ */
+export async function apiAiChat(category, message, history = [], language = 'en') {
+  return apiRequest('/api/ai/chat', {
+    method: 'POST',
+    body: JSON.stringify({ category, message, history, language }),
+  });
+}

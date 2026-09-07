@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useLanguage } from '../contexts/LanguageContext';
-import { getEmergencyGuidance } from '../services/aiService';
+import { getEmergencyGuidance, classifyEmergency } from '../services/aiService';
 import { MessageSquare, Send, Bot, User, Loader2, Info, Mic, Globe, AlertTriangle } from 'lucide-react';
 
 export default function AIAssistant() {
@@ -31,8 +31,13 @@ export default function AIAssistant() {
     setIsLoading(true);
 
     try {
+      // Dynamically classify the current message's emergency category
+      const classification = await classifyEmergency(currentInput);
+      const detectedCategory = classification?.category || 'other';
+      setCategory(detectedCategory);
+
       const history = messages.map(m => ({ role: m.role, content: m.content }));
-      const response = await getEmergencyGuidance(category, currentInput, history, t);
+      const response = await getEmergencyGuidance(detectedCategory, currentInput, history, t);
       const assistantMessage = {
         role: 'assistant',
         content: response,

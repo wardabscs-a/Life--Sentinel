@@ -4,3 +4,5 @@ dist/
 .env.local
 .env.*.local
 *.log
+serviceAccountKey.json
+serviceAccountKey.json.json

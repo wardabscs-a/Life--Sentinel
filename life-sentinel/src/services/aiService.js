@@ -1,13 +1,9 @@
 // AI Service - Modular architecture for easy provider/model swapping
-// Currently uses keyword-based classification + mock guidance
-// Replace with real AI API calls when keys are configured
+// Classification: keyword-based locally (always works, no API key needed).
+// Guidance: routes through backend /api/ai/chat proxy (AI key stays server-side).
+//           Falls back to local mock ONLY when AI is genuinely not configured.
 
-const AI_API_KEY = import.meta.env.VITE_AI_API_KEY;
-const AI_API_URL = import.meta.env.VITE_AI_API_URL;
-const AI_MODEL = import.meta.env.VITE_AI_MODEL || 'gpt-3.5-turbo';
-
-// Check if real AI is configured
-const hasRealAI = AI_API_KEY && AI_API_KEY !== 'your_ai_api_key';
+import { apiAiChat, isBackendConfigured } from './apiClient';
 
 // Category keyword mappings for classification
 const CATEGORY_KEYWORDS = {
@@ -32,9 +28,6 @@ const SEVERITY_KEYWORDS = {
  * @returns {{ category: string, severity: string, keywords: string[], summary: string }}
  */
 export async function classifyEmergency(text) {
-  if (hasRealAI) {
-    return classifyWithAI(text);
-  }
   return classifyLocally(text);
 }
 
@@ -77,30 +70,13 @@ function classifyLocally(text) {
   };
 }
 
-async function classifyWithAI(text) {
-  try {
-    const response = await fetch(AI_API_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${AI_API_KEY}` },
-      body: JSON.stringify({
-        model: AI_MODEL,
-        messages: [
-          { role: 'system', content: 'You are an emergency classification system. Analyze the text and return JSON: { "category": one of [accident, fire, flood, earthquake, medical, crime, other], "severity": one of [critical, high, medium, low], "keywords": [detected keywords], "summary": "brief summary" }' },
-          { role: 'user', content: text },
-        ],
-        temperature: 0.3,
-        max_tokens: 200,
-      }),
-    });
-    const data = await response.json();
-    return JSON.parse(data.choices[0].message.content);
-  } catch {
-    return classifyLocally(text);
-  }
-}
-
 /**
- * Get AI emergency guidance
+ * Get AI emergency guidance.
+ * Tries the backend AI proxy first. Falls back to local mock guidance ONLY when:
+ *   - The backend is not configured (no VITE_BACKEND_URL), or
+ *   - The backend explicitly reports AI_NOT_CONFIGURED.
+ * Throws on provider failures so the UI can show a real error instead of
+ * silently presenting mock guidance as AI-generated.
  * @param {string} category - Emergency category
  * @param {string} message - User message
  * @param {Array} history - Chat history
@@ -110,10 +86,13 @@ async function classifyWithAI(text) {
 export async function getEmergencyGuidance(category, message, history = [], langOrT = 'en') {
   const t = typeof langOrT === 'function' ? langOrT : null;
   const language = t ? (t._lang || 'en') : langOrT;
-  if (hasRealAI) {
-    return getGuidanceFromAI(category, message, history, language);
+
+  // No backend at all → local mock is the only option
+  if (!isBackendConfigured()) {
+    return getMockGuidance(category, message, t, language);
   }
-  return getMockGuidance(category, message, t, language);
+
+  return getGuidanceFromBackend(category, message, history, language, t);
 }
 
 const GUIDANCE_RESPONSES = {
@@ -213,30 +192,27 @@ function getMockGuidance(category, message, t, language) {
   return `${responses[0]}\n\n${responses[1]}\n\n${responses[2] || ''}\n\n${tr('ai.moreQuestion', 'Would you like more specific guidance on any of these steps?')}`.trim();
 }
 
-async function getGuidanceFromAI(category, message, history, language) {
-  try {
-    const languageInstruction = language === 'ur'
-      ? 'Respond in Urdu (natural, clear Pakistani Urdu).'
-      : 'Respond in English.';
-    const messages = [
-      {
-        role: 'system',
-        content: `You are Life Sentinel's AI emergency assistant. ${languageInstruction} The current emergency category is: ${category}. Provide SHORT, CLEAR, ACTIONABLE instructions. Prioritize immediate safety. Ask only necessary follow-up questions. Never claim to be a replacement for emergency services. Support English and Urdu. Response must be under 150 words.`
-      },
-      ...history.map(h => ({ role: h.role, content: h.content })),
-      { role: 'user', content: message },
-    ];
+/**
+ * Call the backend AI proxy and return the AI-generated response text.
+ * Falls back to local mock ONLY when the backend reports AI_NOT_CONFIGURED.
+ * Throws on any other error so the caller can display a real error state.
+ */
+async function getGuidanceFromBackend(category, message, history, language, t) {
+  const result = await apiAiChat(category, message, history, language);
 
-    const response = await fetch(AI_API_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${AI_API_KEY}` },
-      body: JSON.stringify({ model: AI_MODEL, messages, temperature: 0.3, max_tokens: 300 }),
-    });
-    const data = await response.json();
-    return data.choices[0].message.content;
-  } catch {
-    return getMockGuidance(category, message, null, language);
+  // Backend explicitly says AI is not configured → intentional local fallback
+  if (result?.error === 'AI_NOT_CONFIGURED') {
+    return getMockGuidance(category, message, t, language);
   }
+
+  // Successful AI response
+  if (result?.success && result.content) {
+    return result.content;
+  }
+
+  // Any other outcome (AI_PROVIDER_ERROR, network failure, etc.) → throw
+  // The UI catch block will show the real error instead of fake mock guidance
+  throw new Error(result?.message || 'AI assistant request failed.');
 }
 
 /**
@@ -266,9 +242,6 @@ export async function analyzeImage(file, t) {
  * @returns {{ riskLevel: 'low'|'medium'|'high', guidance: string[], escalateToSOS: boolean }}
  */
 export async function assessHarassmentRisk(text, t) {
-  if (hasRealAI) {
-    return assessHarassmentRiskWithAI(text, t);
-  }
   return assessHarassmentRiskLocally(text, t);
 }
 
@@ -363,32 +336,6 @@ function getHarassmentGuidance(riskLevel, escalate, t) {
     tr('ai.harass.low.4', 'If the situation escalates, call Police on 15 immediately.'),
     tr('ai.harass.low.5', 'Document any suspicious behavior for future reference.'),
   ];
-}
-
-async function assessHarassmentRiskWithAI(text, t) {
-  const language = t ? (t._lang || 'en') : 'en';
-  try {
-    const response = await fetch(AI_API_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${AI_API_KEY}` },
-      body: JSON.stringify({
-        model: AI_MODEL,
-        messages: [
-          {
-            role: 'system',
-            content: `You are a harassment safety risk assessor. Respond in ${language === 'ur' ? 'Urdu' : 'English'}. Analyze the user's situation description and return JSON: { "riskLevel": one of ["low","medium","high"], "guidance": ["actionable safety step 1", "step 2", ...], "escalateToSOS": boolean }. Set escalateToSOS to true ONLY if the person is in immediate physical danger right now. Keep guidance concise and actionable. Max 5 guidance items.`,
-          },
-          { role: 'user', content: text },
-        ],
-        temperature: 0.3,
-        max_tokens: 300,
-      }),
-    });
-    const data = await response.json();
-    return JSON.parse(data.choices[0].message.content);
-  } catch {
-    return assessHarassmentRiskLocally(text, t);
-  }
 }
 
 /**
