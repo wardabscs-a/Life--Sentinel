@@ -237,6 +237,14 @@ export default async function handler(req, res) {
         error: 'AI_PROVIDER_ERROR',
         message: `AI provider returned an error (status ${providerResponse.status}).`,
         retryable: providerResponse.status >= 500,
+        // Diagnostic: safe provider error fields (never contains secrets)
+        provider_error: {
+          status: providerResponse.status,
+          ...(errType ? { type: errType } : {}),
+          ...(errCode ? { code: errCode } : {}),
+          ...(errParam ? { param: errParam } : {}),
+          ...(errMessage ? { message: errMessage } : {}),
+        },
       });
     }
 
