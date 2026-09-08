@@ -146,13 +146,25 @@ export default async function handler(req, res) {
       });
     }
 
-    // --- Build the AI provider request ---
+    // --- Resolve the Responses API endpoint ---
+    // The Responses API (POST /v1/responses) replaces the legacy Chat
+    // Completions endpoint.  If AI_API_URL still points at
+    // /v1/chat/completions, rewrite it automatically.
+    let resolvedUrl = aiUrl;
+    if (resolvedUrl.includes('/v1/chat/completions')) {
+      resolvedUrl = resolvedUrl.replace('/v1/chat/completions', '/v1/responses');
+    } else if (!resolvedUrl.includes('/v1/responses')) {
+      // Bare base URL — append the Responses API path
+      resolvedUrl = resolvedUrl.replace(/\/+$/, '') + '/v1/responses';
+    }
+
+    // --- Build the AI provider request (Responses API format) ---
     const languageInstruction =
       language === 'ur'
         ? 'Respond in Urdu (natural, clear Pakistani Urdu).'
         : 'Respond in English.';
 
-    const aiMessages = [
+    const aiInput = [
       {
         role: 'system',
         content:
@@ -166,10 +178,10 @@ export default async function handler(req, res) {
       { role: 'user', content: message },
     ];
 
-    // --- Call the AI provider ---
+    // --- Call the AI provider (Responses API) ---
     let providerResponse;
     try {
-      providerResponse = await fetch(aiUrl, {
+      providerResponse = await fetch(resolvedUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -177,9 +189,9 @@ export default async function handler(req, res) {
         },
         body: JSON.stringify({
           model: aiModel,
-          messages: aiMessages,
+          input: aiInput,
           temperature: 0.3,
-          max_tokens: 300,
+          max_output_tokens: 300,
         }),
       });
     } catch (networkErr) {
@@ -192,8 +204,14 @@ export default async function handler(req, res) {
     }
 
     if (!providerResponse.ok) {
+      let errorDetail = '';
+      try {
+        const errBody = await providerResponse.json();
+        errorDetail = errBody?.error?.message || errBody?.message || '';
+      } catch { /* non-JSON error body */ }
       console.error(
-        `AI provider returned ${providerResponse.status} ${providerResponse.statusText}`
+        `AI provider returned ${providerResponse.status} ${providerResponse.statusText}`,
+        errorDetail ? `— ${errorDetail}` : ''
       );
       return res.status(502).json({
         error: 'AI_PROVIDER_ERROR',
@@ -203,7 +221,16 @@ export default async function handler(req, res) {
     }
 
     const data = await providerResponse.json();
-    const content = data?.choices?.[0]?.message?.content;
+
+    // Parse Responses API output: output[].content[].text
+    // (also tolerates legacy Chat Completions: choices[0].message.content)
+    let content;
+    if (Array.isArray(data?.output)) {
+      const messageItem = data.output.find((o) => o.type === 'message');
+      content = messageItem?.content?.[0]?.text;
+    } else if (data?.choices?.[0]?.message?.content) {
+      content = data.choices[0].message.content;
+    }
 
     if (!content) {
       console.error('AI provider returned empty response body');
