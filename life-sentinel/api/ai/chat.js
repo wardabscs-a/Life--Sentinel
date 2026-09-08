@@ -179,7 +179,18 @@ export default async function handler(req, res) {
     ];
 
     // --- Call the AI provider (Responses API) ---
+    // GPT-5.6 Luna is a reasoning model: it does NOT support `temperature`.
+    // Sending any temperature value returns HTTP 400. Reasoning effort
+    // controls how much the model "thinks" — "low" is optimal for short,
+    // actionable emergency guidance (fast + cheap).
     let providerResponse;
+    const requestBody = {
+      model: aiModel,
+      input: aiInput,
+      reasoning: { effort: 'low' },
+      max_output_tokens: 1024,
+    };
+
     try {
       providerResponse = await fetch(resolvedUrl, {
         method: 'POST',
@@ -187,12 +198,7 @@ export default async function handler(req, res) {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${aiKey}`,
         },
-        body: JSON.stringify({
-          model: aiModel,
-          input: aiInput,
-          temperature: 0.3,
-          max_output_tokens: 300,
-        }),
+        body: JSON.stringify(requestBody),
       });
     } catch (networkErr) {
       console.error('AI provider network error:', networkErr.message);
@@ -204,15 +210,29 @@ export default async function handler(req, res) {
     }
 
     if (!providerResponse.ok) {
-      let errorDetail = '';
+      // Parse the error body to log structured diagnostics.
+      // NEVER log AI_API_KEY, Authorization headers, or full request URLs.
+      let errType = '';
+      let errCode = '';
+      let errMessage = '';
+      let errParam = '';
       try {
         const errBody = await providerResponse.json();
-        errorDetail = errBody?.error?.message || errBody?.message || '';
+        const err = errBody?.error || {};
+        errType = err.type || '';
+        errCode = err.code || '';
+        errMessage = err.message || errBody?.message || '';
+        errParam = err.param || '';
       } catch { /* non-JSON error body */ }
+
       console.error(
-        `AI provider returned ${providerResponse.status} ${providerResponse.statusText}`,
-        errorDetail ? `— ${errorDetail}` : ''
+        `[AI provider] HTTP ${providerResponse.status} ${providerResponse.statusText}` +
+        (errType ? ` | type: ${errType}` : '') +
+        (errCode ? ` | code: ${errCode}` : '') +
+        (errParam ? ` | param: ${errParam}` : '') +
+        (errMessage ? ` | message: ${errMessage}` : '')
       );
+
       return res.status(502).json({
         error: 'AI_PROVIDER_ERROR',
         message: `AI provider returned an error (status ${providerResponse.status}).`,
