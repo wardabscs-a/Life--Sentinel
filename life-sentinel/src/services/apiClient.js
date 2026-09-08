@@ -240,6 +240,12 @@ export async function apiResolveSOS(sosId, notes = '') {
 /**
  * Send an AI chat request to the Life Sentinel backend (server-side AI proxy).
  * The AI API key is held server-side only — never exposed to the browser.
+ *
+ * Uses VITE_BACKEND_URL when configured (e.g. pointing at a standalone Express
+ * server). Otherwise falls back to a relative URL which resolves against the
+ * current host — this works in local dev (Vite proxies /api to localhost:4000)
+ * and in production on Vercel (the serverless function lives at /api/ai/chat).
+ *
  * @param {string} category - Emergency category (e.g. 'fire', 'medical', 'other')
  * @param {string} message - Current user message
  * @param {Array<{role: string, content: string}>} history - Conversation history
@@ -247,8 +253,45 @@ export async function apiResolveSOS(sosId, notes = '') {
  * @returns {Object} { success, content?, error? }
  */
 export async function apiAiChat(category, message, history = [], language = 'en') {
-  return apiRequest('/api/ai/chat', {
-    method: 'POST',
-    body: JSON.stringify({ category, message, history, language }),
-  });
+  const baseUrl = BACKEND_URL && BACKEND_URL !== 'https://your-backend-api.com'
+    ? BACKEND_URL
+    : '';
+
+  const url = `${baseUrl}/api/ai/chat`;
+
+  const idToken = await getIdToken();
+  const headers = {
+    'Content-Type': 'application/json',
+    ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
+  };
+
+  let response;
+  try {
+    response = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ category, message, history, language }),
+    });
+  } catch {
+    throw new ApiError(
+      'NETWORK_ERROR',
+      'Cannot connect to the server. Please check your internet connection.',
+      true
+    );
+  }
+
+  if (!response.ok) {
+    let errorBody = null;
+    try {
+      errorBody = await response.json();
+    } catch { /* response may not be JSON */ }
+
+    throw new ApiError(
+      `HTTP_${response.status}`,
+      errorBody?.message || errorBody?.error || `Server error (${response.status})`,
+      response.status >= 500
+    );
+  }
+
+  return response.json();
 }

@@ -3,7 +3,7 @@
 // Guidance: routes through backend /api/ai/chat proxy (AI key stays server-side).
 //           Falls back to local mock ONLY when AI is genuinely not configured.
 
-import { apiAiChat, isBackendConfigured } from './apiClient';
+import { apiAiChat } from './apiClient';
 
 // Category keyword mappings for classification
 const CATEGORY_KEYWORDS = {
@@ -87,11 +87,10 @@ export async function getEmergencyGuidance(category, message, history = [], lang
   const t = typeof langOrT === 'function' ? langOrT : null;
   const language = t ? (t._lang || 'en') : langOrT;
 
-  // No backend at all → local mock is the only option
-  if (!isBackendConfigured()) {
-    return getMockGuidance(category, message, t, language);
-  }
-
+  // Always try the backend AI proxy first. apiAiChat now uses a relative URL
+  // when VITE_BACKEND_URL is not set, so it works on Vercel and with Vite's
+  // dev proxy. The backend returns AI_NOT_CONFIGURED when AI env vars are
+  // missing, which getGuidanceFromBackend handles by falling back to local mock.
   return getGuidanceFromBackend(category, message, history, language, t);
 }
 
