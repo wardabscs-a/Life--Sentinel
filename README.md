@@ -1,11 +1,20 @@
 # Life Sentinel
-https://lifesentinel.vercel.app/
-> A responsive emergency-awareness web application that helps people assess risks, find nearby resources, manage trusted contacts, report incidents, and access safety guidance.
+**Live Demo:** https://lifesentinel.vercel.app/
 
-Life Sentinel combines browser location services, live weather signals, mapping data, Firebase Authentication, Cloud Firestore, and emergency-focused workflows in a React single-page application.
+> **Predict & Protect**
 
+> Life Sentinel is an AI-powered emergency management and response platform designed to help people act faster and more safely before, during, and after emergencies.
+
+Life Sentinel combines AI-assisted emergency assessment, browser location services, weather and hazard awareness, nearby emergency resources, trusted contacts, emergency reporting, safety guidance, and SOS workflows in a responsive React single-page application.
 > **Emergency notice:** Life Sentinel is an assistance and information tool. It does not replace emergency services, medical advice, law enforcement, or professional disaster-response systems. In a life-threatening emergency, call the appropriate local emergency number immediately (for example, **1122** in Pakistan).
+## Why Life Sentinel?
 
+The name **Life Sentinel** represents the purpose of the platform:
+
+- **Life** — the people and communities the platform is designed to help protect.
+- **Sentinel** — a watchful protector that helps identify risks, provide guidance, and connect people to help when it matters most.
+
+Life Sentinel does not try to stop emergencies from happening. It focuses on the critical moments around an emergency, helping turn confusion and information delays into clearer, more informed action.
 ## Contents
 
 - [Key Features](#key-features)
@@ -32,23 +41,29 @@ Life Sentinel combines browser location services, live weather signals, mapping 
 - **Browser geolocation** with a friendly city/country label resolved through reverse geocoding.
 - **Location-aware alerts** that filter supported alert data by distance from the user's current location.
 - **Weather monitoring** using Open-Meteo by default, including severity classification for weather conditions such as thunderstorms, heavy rain, and hail.
-- **Emergency resource finder** that queries OpenStreetMap/Overpass for nearby hospitals, police stations, fire stations, shelters, clinics, and ambulance stations.
+- **Emergency resource finder** that uses OpenStreetMap data through the Overpass API to find nearby hospitals, police stations, fire stations, shelters, clinics, and ambulance stations based on the user's current location.
 - **Emergency map** built with Leaflet and React Leaflet.
 
-### SOS and reporting
+### SOS and emergency reporting
 
 - **Press-and-hold SOS flow** with continuous location tracking during an active SOS session.
-- **Emergency reporting** with category, severity, description, location, and timestamp support.
+- **Emergency reporting** with category, severity, description, location, timestamp, and voice-recording support.
+- Supports emergency categories including **Accident, Fire, Flood, Earthquake, Medical, Crime/Harassment, and Other**.
+- **Real browser voice recording** using the MediaRecorder API, with microphone permission requested when recording is started.
 - **Trusted-contact notification workflow** for SOS events when an optional backend notification service is configured.
-- **Honest fallback behavior:** when an optional backend is not configured, reports are stored locally and, for authenticated users, also attempted in Firestore. The UI communicates the actual delivery state instead of claiming that emergency services were notified.
-
+- **Emergency-service call shortcuts** provide quick access to local emergency numbers such as Police (15), Rescue (1122), Fire (16), and Edhi (115).
+* **Honest fallback behavior:** when an optional backend is not configured, reports are stored locally and, for authenticated users, are also attempted in Firestore. The UI communicates the actual delivery state instead of claiming that emergency services were notified.
+ 
 ### Personal safety tools
 
-- **AI Emergency Assistant** for emergency classification and safety guidance.
-- **Harassment-risk assessment** and related safety guidance.
+- **AI Emergency Assistant** powered by GPT-5.6 Luna for emergency classification, risk assessment, and safety guidance through the server-side `api/ai/chat.js` proxy.
+- **Detect** — analyzes available user input such as text, voice, images, and location context to help identify the emergency type and severity.
+- **Predict** — provides weather and hazard awareness using available environmental data.
+- **Guide** — provides situation-specific emergency instructions and safety guidance.
+- **Connect** — helps users reach trusted contacts and locate nearby hospitals, police stations, fire stations, shelters, clinics, and ambulance stations.
+- **Harassment-risk assessment** with safety guidance for personal safety situations.
 - **Safe routes**, **community incidents**, alerts, emergency guides, and dedicated guidance pages.
-- **Trusted Contacts** management backed by Firestore. Contacts are isolated per authenticated user and persist across reloads.
-
+  
 ### Account and experience
 
 - Firebase **email/password sign-up, sign-in, sign-out, session restoration, and password reset**.
@@ -71,7 +86,9 @@ Life Sentinel combines browser location services, live weather signals, mapping 
 | Maps | Leaflet and React Leaflet |
 | Weather | Open-Meteo by default; optional OpenWeatherMap support |
 | Nearby places | OpenStreetMap data through the Overpass API |
-| Deployment configuration | Firebase Hosting configuration included |
+| AI | GPT-5.6 Luna through the server-side Vercel AI proxy, with local fallback guidance |
+| Voice recording | Browser MediaRecorder API |
+| Deployment | Vercel |
 
 ## Architecture
 
@@ -96,14 +113,15 @@ Browser
   │    ├─ OpenStreetMap/Overpass → nearby emergency resources
   │    └─ Nominatim              → reverse geocoding
   │
-  └─ Optional Life Sentinel backend
+    └─ Vercel serverless backend
+       ├─ AI chat proxy with Firebase authentication
        ├─ emergency report delivery
        ├─ SOS activation/deactivation
        ├─ trusted-contact notifications
-       └─ server-side location and resource endpoints
-```
+       └─ optional server-side location and resource endpoints
 
-### Key directories
+
+**### Key directories**
 
 ```text
 life-sentinel/
@@ -124,10 +142,13 @@ life-sentinel/
 │  │  ├─ emergencyService.js    # Reports, SOS, and fallback handling
 │  │  ├─ weatherService.js      # Open-Meteo/OpenWeatherMap integration
 │  │  ├─ placesService.js       # Overpass lookup and distance utilities
-│  │  ├─ aiService.js           # Local/optional AI classification and guidance
+│  │  ├─aiService.js            # AI assistant client and emergency guidance
 │  │  └─ apiClient.js           # Optional backend HTTP client
 │  ├─ App.jsx                   # Provider composition and routes
 │  └─ index.css                 # Global theme and shared visual styles
+├─ api/
+│  └─ ai/
+│     └─ chat.js                # Authenticated server-side AI proxy
 ├─ .env.example                 # Environment-variable template
 ├─ firebase.json                # Firebase Hosting / Firestore CLI configuration
 ├─ firestore.rules              # Firestore security rules
@@ -195,9 +216,9 @@ VITE_FIREBASE_APP_ID=your_web_app_id
 | --- | --- |
 | `VITE_BACKEND_URL` | Base URL for the optional Life Sentinel backend. Leave blank or use the template placeholder to keep backend calls disabled. |
 | `VITE_BACKEND_API_KEY` | Optional browser-safe API token for the backend. Prefer short-lived user tokens in a production system. |
-| `VITE_AI_API_KEY` | Enables the configurable external AI endpoint. Without it, the app uses local keyword classification and built-in guidance. |
-| `VITE_AI_API_URL` | Compatible chat-completions endpoint for the optional AI provider. |
-| `VITE_AI_MODEL` | Optional model identifier. |
+| `AI_API_URL` | Server-side AI provider endpoint used by the Vercel AI proxy. |
+| `AI_API_KEY` | Server-side AI provider key. Never expose this as a `VITE_*` frontend variable. |
+| `AI_MODEL` | Model identifier used by the server-side AI proxy. |
 | `VITE_OPENWEATHER_API_KEY` | Enables the optional OpenWeatherMap path. Without it, the app uses Open-Meteo. |
 | `VITE_OPENWEATHER_API_URL` | Optional OpenWeatherMap base URL. |
 | `VITE_GOOGLE_MAPS_API_KEY` | Reserved optional map key. The current map/resource experience uses Leaflet and OpenStreetMap by default. |
@@ -288,7 +309,7 @@ Trusted contacts are stored in `users/{uid}.trustedContacts`; they are not share
 
 ## Optional Backend Integration
 
-The frontend can communicate with an optional Life Sentinel backend when `VITE_BACKEND_URL` is configured. The backend is not included in this repository.
+The frontend can communicate with an optional Life Sentinel backend for additional server-side features when `VITE_BACKEND_URL` is configured. This optional backend is separate from the Vercel serverless AI proxy in `api/ai/chat.js` and is not included in this repository.
 
 Expected endpoints are:
 
@@ -306,6 +327,65 @@ The API client sends JSON and, when provided, includes `Authorization: Bearer <V
 
 For production, protect these routes with authenticated server-side authorization, validate request payloads, rate limit abuse-prone operations, log delivery attempts, and keep SMS/provider credentials entirely on the server.
 
+## AI Assistant
+
+Life Sentinel includes an AI-powered Emergency Assistant designed to provide concise, actionable safety guidance during emergency situations.
+
+### AI request flow
+
+The AI Assistant uses the following production flow:
+
+```text
+Authenticated user
+       │
+       ▼
+Life Sentinel frontend
+       │
+       │ Firebase ID token
+       ▼
+Vercel serverless function
+       │
+       └─ api/ai/chat.js
+            ├─ Verifies Firebase authentication
+            ├─ Validates the request
+            ├─ Keeps the AI API key server-side
+            └─ Sends the request to the configured AI provider
+       │
+       ▼
+GPT-5.6 Luna
+       │
+       ▼
+AI response
+       │
+       ▼
+Life Sentinel frontend
+### `api/ai/chat.js`
+
+The `api/ai/chat.js` Vercel serverless function acts as the secure server-side AI proxy.
+
+It:
+
+- Accepts authenticated AI requests.
+- Verifies the Firebase ID token before processing a request.
+- Validates the emergency category, user message, conversation history, and language.
+- Supports English and Urdu responses.
+- Keeps the AI provider API key server-side.
+- Sends requests to the configured AI provider using the Responses API.
+- Uses **GPT-5.6 Luna** as the AI model.
+- Uses low reasoning effort to prioritize concise and actionable emergency guidance.
+- Limits the AI response length for practical emergency use.
+- Returns appropriate error states when authentication, configuration, network communication, or the AI provider fails.
+
+### AI model configuration
+
+The AI model is configured through the following server-side environment variables:
+ AI_API_URL=your_ai_provider_endpoint
+AI_API_KEY=your_server_side_api_key
+AI_MODEL=gpt-5.6-luna
+
+`AI_API_KEY` is never exposed through a `VITE_*` frontend environment variable.
+
+The AI Assistant is designed to provide supportive emergency information and safety guidance. It does not replace emergency services, medical professionals, law enforcement, or professional disaster-response systems.
 ## Available Scripts
 
 | Command | Description |
@@ -353,39 +433,36 @@ External services can be unavailable, rate limited, incomplete, or delayed. The 
 
 Life Sentinel is intentionally transparent about integration availability:
 
-- **AI assistant:** uses local keyword-based classification and built-in guidance unless a compatible AI endpoint is configured. AI outputs are assistive and not a substitute for professional advice.
+- **AI assistant:** uses the GPT-5.6 Luna model through the server-side Vercel AI proxy in `api/ai/chat.js` when the AI integration is configured. If the AI service is unavailable or not configured, the application can fall back to local emergency classification and built-in guidance. AI outputs are assistive and not a substitute for professional advice.
 - **Backend reporting/SOS:** backend delivery is used only when `VITE_BACKEND_URL` is configured. If it is unavailable, the UI reports the actual fallback state.
 - **Emergency reports:** when the backend is not configured, a report is stored in `localStorage` (`ls_reports`) and, when authenticated, is also attempted in Firestore.
 - **Preferences:** language, dark-mode preference, onboarding completion, and local report fallback are stored client-side. Firebase Authentication—not local storage—is the source of truth for authenticated sessions.
-- **Location:** users can deny browser location permission. The app then falls back to its configured default/demo location, so proximity features are less precise.
+- **Location:** location-dependent features require browser location permission. If the current location cannot be obtained, Life Sentinel does not substitute an unrelated demo location and instead communicates that location-based data is unavailable.
+- **Safe routes:** current route reports use demo/community data. Real-time traffic and live route-incident data are not currently available. Available routes can provide a navigation link to Google Maps for directions.
 - **Maps and places:** OpenStreetMap data may be incomplete or out of date.
 - **Notifications:** actual SMS/call/notification delivery requires a properly secured server-side service. The frontend alone cannot guarantee delivery.
 
 ## Deployment
 
-### Firebase Hosting
+Life Sentinel is deployed as a Vite/React application on **Vercel**.
 
-`firebase.json` is configured to serve the Vite production build and rewrite all routes to `index.html`, which is required for React Router.
+**Live Demo:** https://lifesentinel.vercel.app/
 
-```bash
-npm run build
-npx firebase deploy --only hosting --project <your-project-id>
-```
+### Vercel deployment
 
-Deploy rules together when needed:
-
-```bash
-npm run build
-npx firebase deploy --only hosting,firestore:rules --project <your-project-id>
-```
+1. Connect the Life Sentinel GitHub repository to Vercel.
+2. Set the required `VITE_FIREBASE_*` environment variables in the Vercel project settings.
+3. Configure any optional backend or AI environment variables required by the deployed features.
+4. Deploy the project. Vercel runs the Vite production build and serves the resulting application.
 
 Before deploying, verify:
 
 - Firebase Email/Password authentication is enabled.
 - The correct Firestore rules are published to the `(default)` database.
-- Production Firebase Web App values are configured in the build environment.
-- Backend URLs use HTTPS.
+- Production Firebase Web App values are configured in Vercel environment variables.
+- Backend URLs use HTTPS when a backend is configured.
 - No frontend environment value contains a private server-side secret.
+- Browser location permission works correctly on the deployed HTTPS site.
 
 ## Troubleshooting
 
